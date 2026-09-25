@@ -21,11 +21,12 @@ pub fn spawn(tx: broadcast::Sender<Vec<f32>>) {
                     frame.push(s);
                     phase += step;
                 }
-                if tx.send(frame).is_err() {
-                    // No listeners right now (phone hasn't connected yet) —
-                    // keep the tone running so late joiners get audio.
-                    continue;
-                }
+                // Err = no listeners right now (phone hasn't connected yet) —
+                // keep the tone running anyway so late joiners get audio.
+                // NOTE: no `continue` here — skipping the sleep below would
+                // busy-spin this thread at 100% CPU whenever nobody is
+                // listening.
+                let _ = tx.send(frame);
                 let elapsed = start.elapsed();
                 if elapsed < interval {
                     std::thread::sleep(interval - elapsed);

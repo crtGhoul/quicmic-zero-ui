@@ -347,6 +347,12 @@ function sendText() {
 
 function enqueueFile(file) {
   if (!file) return;
+  if (!dc || dc.readyState !== 'open') {
+    // Files picked while disconnected would sit in the queue and be silently
+    // discarded by the next teardown — say so instead of swallowing them.
+    alert('Not connected — reconnect before sending files.');
+    return;
+  }
   sendQueue.push(file);
   pumpQueue();
 }
@@ -544,7 +550,15 @@ function sigConnect() {
   setSigDot('off');
   showSigNotice('Connecting to matchmaker…');
   let ws;
-  try { ws = new WebSocket(url); } catch (e) { retrySig(gen); return; }
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    // The URL is malformed — retrying is pointless, so say so plainly
+    // instead of looping on "Connecting to matchmaker…" forever.
+    setSigDot('bad');
+    showSigNotice("That server URL doesn't look right — check it in Settings.");
+    return;
+  }
   sig = ws;
   ws.onopen = () => {
     if (gen !== sigGen) { try { ws.close(); } catch (e) { /* noop */ } return; }

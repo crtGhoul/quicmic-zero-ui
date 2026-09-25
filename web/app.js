@@ -165,6 +165,27 @@ async function fetchWithTimeout(url, options = {}, timeout = 1000) {
 }
 
 /**
+ * localStorage.setItem that never throws. In private-browsing modes the write
+ * can raise (quota exceeded); an unguarded throw in the middle of pairing would
+ * surface as a bogus "Connection error" even though the server already paired us.
+ */
+function storageSet(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch (e) { /* storage unavailable — the feature just won't persist */ }
+}
+
+/**
+ * localStorage.removeItem that never throws (same private-browsing hazard as
+ * storageSet — a throw in the QR-pairing path would abort pairing entirely).
+ */
+function storageRemove(key) {
+    try {
+        localStorage.removeItem(key);
+    } catch (e) { /* noop */ }
+}
+
+/**
  * Single, fast liveness probe. Returns true only if the server answers with a
  * 2xx response. A graceful shutdown makes the API reply 503, and an offline
  * server makes the fetch throw — both resolve to `false` (server gone).
@@ -219,7 +240,7 @@ async function init() {
         // Remember the dismissal per version so we don't nag again until a newer
         // release appears.
         if (serverInfo && serverInfo.latest_version) {
-            localStorage.setItem('dismissedUpdate', serverInfo.latest_version);
+            storageSet('dismissedUpdate', serverInfo.latest_version);
         }
     });
     maybeShowUpdateBanner();
@@ -316,8 +337,11 @@ async function init() {
     const hash = location.hash.slice(1);
     if (hash && hash.length >= 1) {
         // Clear any stale token from a previous server session
-        localStorage.removeItem('sessionToken');
+        storageRemove('sessionToken');
         sessionToken = null;
+        // A fresh QR scan is an explicit pairing intent — drop the remembered
+        // server so a stale entry can't shadow it.
+        forgetStoredServer();
         pinInput.value = hash;
         // Show where this QR code points, and that the PIN came from the scan.
         qrBadge.hidden = false;
@@ -327,8 +351,11 @@ async function init() {
         history.replaceState(null, '', location.pathname);
         // Auto-pair after a short delay (to let UI render)
         setTimeout(doPair, 300);
+    } else if (tryAutoPair()) {
+        // An automatic pairing with the remembered server is in flight.
     } else {
-        // No QR hash — check if we have a stored token from a previous pair
+        // No QR hash and no remembered server — check if we have a stored
+        // token from a previous pair
         const storedToken = localStorage.getItem('sessionToken');
         if (storedToken) {
             sessionToken = storedToken;
@@ -339,6 +366,8 @@ async function init() {
             renewSessionToken();
         }
     }
+
+    diagBtn.addEventListener('click', runDiagnostics);
 
     // Returning to the foreground is the one moment we may safely try to restore
     // capture (see the microphone-recovery section). Going *hidden* is deliberately
@@ -421,18 +450,18 @@ function returnToPairing(reason, serverGone = false) {
         powerSaveOverlay.classList.remove('dimmed');
         releaseWakeLock();
     }
-    localStorage.removeItem('sessionToken');
+    storageRemove('sessionToken');
     sessionToken = null;
     mainScreen.classList.remove('active');
     pairScreen.classList.add('active');
 
     if (serverGone) {
-        // The server is gone. If it comes back it will have a NEW self-signed
-        // certificate (regenerated on every start), so this page's pinned hash and
-        // already-accepted cert are stale: in-page re-pairing would silently fail on
-        // the cert mismatch, and we can't even probe for its return (the mismatch
-        // fails the fetch). A full reload is the only reliable way back — so lock the
-        // PIN entry and prompt a refresh.
+        // The server is gone. If it comes back with a new identity (new LAN IP
+        // or a rotated near-expiry certificate), this page's pinned hash and
+        // already-accepted cert are stale: in-page re-pairing would silently
+        // fail on the cert mismatch, and we can't even probe for its return
+        // (the mismatch fails the fetch). A full reload is the only reliable
+        // way back — so lock the PIN entry and prompt a refresh.
         pinInput.value = '';
         pinInput.disabled = true;
         pairBtn.disabled = true;
@@ -653,7 +682,7 @@ async function updateServerSettings() {
         latency_threshold: parseInt(lrSlider.value),
     };
 
-    localStorage.setItem('quicmic_settings', JSON.stringify(settings));
+    storageSet('quicmic_settings', JSON.stringify(settings));
     sendGateToWorklet(); // keep the worklet's client-side gate in sync
     sendGainToWorklet(); // and the gain
 
@@ -885,7 +914,111 @@ function maybeShowCoach() {
 
 function dismissCoach() {
     coachOverlay.hidden = true;
-    localStorage.setItem('quicmic_coach_seen', '1');
+    storageSet('quicmic_coach_seen', '1');
+}
+
+// ── Remembered server (auto-connect) ──────────────────────────────────
+// After a successful pairing the phone remembers { origin, pin, certHash }.
+// The PC app keeps the same PIN + certificate across restarts (persistent
+// server identity), so on the next visit the phone can pair by itself — no
+// QR scan, no PIN typing.
+
+const STORED_SERVER_KEY = 'quicmic_server';
+let autoPairAttempt = false;
+
+function loadStoredServer() {
+    try {
+        const raw = localStorage.getItem(STORED_SERVER_KEY);
+        if (!raw) return null;
+        const s = JSON.parse(raw);
+        if (s && typeof s.origin === 'string' && /^\d{6}$/.test(s.pin || '')) return s;
+    } catch (e) {
+        // Corrupt entry — treat as absent.
+    }
+    return null;
+}
+
+function rememberServer(pin) {
+    // storageSet never throws: without storage, auto-connect just won't persist.
+    storageSet(STORED_SERVER_KEY, JSON.stringify({
+        origin: location.origin,
+        pin,
+        certHash: serverInfo ? serverInfo.cert_hash : null,
+    }));
+}
+
+function forgetStoredServer() {
+    storageRemove(STORED_SERVER_KEY);
+}
+
+/**
+ * Try an automatic pairing with the remembered server. Returns true when an
+ * auto-pair was started (the caller should do nothing else).
+ */
+function tryAutoPair() {
+    const stored = loadStoredServer();
+    if (!stored || stored.origin !== location.origin) return false;
+    // The PC app regenerated its identity (new network, cleared data, or a
+    // rotated near-expiry certificate) — the remembered PIN belonged to the old
+    // identity and is useless now. This page already loaded over the current
+    // cert, so there is nothing to accept: just pair again with the PIN shown
+    // on the PC.
+    if (stored.certHash && serverInfo && stored.certHash !== serverInfo.cert_hash) {
+        forgetStoredServer();
+        showToast('PC identity changed — pair again with the PIN shown on the PC');
+        return false;
+    }
+    autoPairAttempt = true;
+    pinInput.value = stored.pin;
+    pairBtn.textContent = 'Reconnecting…';
+    setTimeout(doPair, 300);
+    return true;
+}
+
+/**
+ * Step-by-step connection check for the pairing screen. Each step reports
+ * pass/fail in plain language with the most common cause, so "can't connect"
+ * becomes a checklist instead of a dead end.
+ */
+async function runDiagnostics() {
+    const box = document.getElementById('diag-results');
+    const btn = document.getElementById('diag-btn');
+    box.hidden = false;
+    box.innerHTML = '<div class="diag-row">Checking…</div>';
+    btn.disabled = true;
+    const rows = [];
+    const row = (ok, text) =>
+        rows.push(`<div class="diag-row ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${text}</div>`);
+    try {
+        // 1. Can this page talk to the PC at all?
+        try {
+            const resp = await fetchWithTimeout('/api/info', {}, 3000);
+            if (resp.ok) {
+                row(true, `Reached the PC at ${location.host}`);
+            } else {
+                row(false, `The PC answered with an error (${resp.status}) — try restarting the PC app`);
+            }
+        } catch (e) {
+            row(false, `Can't reach the PC at ${location.host}. Is the app running, and are both devices on the same Wi-Fi?`);
+        }
+        // 2. The page itself only loads over HTTPS when the certificate was
+        // accepted — a failed load never gets this far, so reaching here means
+        // the cert step is done.
+        row(location.protocol === 'https:',
+            location.protocol === 'https:'
+                ? 'Secure connection is up (certificate accepted)'
+                : 'Not on HTTPS — something is very wrong, reload the page');
+        // 3. Best-latency transport availability in this browser.
+        const hasWT = 'WebTransport' in window;
+        row(hasWT,
+            hasWT
+                ? 'This browser supports WebTransport (lowest latency)'
+                : 'No WebTransport here — the app will use the WebSocket fallback (slightly more latency)');
+    } finally {
+        btn.disabled = false;
+    }
+    rows.push('<div class="diag-hints">Still stuck? Check: ① the same Wi-Fi on phone and PC (not a guest network) ② VPN off on both devices ③ Windows Firewall allowed the app on first run ④ the PC app is open and showing its QR code.</div>');
+    box.innerHTML = rows.join('');
 }
 
 // ── Pairing & Session Tokens ──────────────────────────────────────────
@@ -905,7 +1038,7 @@ async function renewToken() {
     const result = await resp.json();
     if (result.success && result.token) {
         sessionToken = result.token;
-        localStorage.setItem('sessionToken', sessionToken);
+        storageSet('sessionToken', sessionToken);
         if (result.mic_name) serverMicName = result.mic_name;
         return true;
     }
@@ -946,9 +1079,9 @@ function initDeviceName() {
     deviceNameInput.addEventListener('change', () => {
         const v = deviceNameInput.value.trim();
         if (v) {
-            localStorage.setItem('quicmic_device_name', v);
+            storageSet('quicmic_device_name', v);
         } else {
-            localStorage.removeItem('quicmic_device_name');
+            storageRemove('quicmic_device_name');
             deviceNameInput.value = defaultDeviceName();
         }
     });
@@ -956,6 +1089,10 @@ function initDeviceName() {
 
 async function doPair() {
     const pin = pinInput.value.trim();
+    // Whether this attempt came from auto-connect (remembered server) rather
+    // than the user typing. Failures get different handling below.
+    const wasAuto = autoPairAttempt;
+    autoPairAttempt = false;
     // The pairing PIN is always exactly 6 digits, so reject anything else before
     // making a doomed round-trip to the server.
     if (!/^\d{6}$/.test(pin)) {
@@ -978,7 +1115,18 @@ async function doPair() {
 
         if (result.success) {
             sessionToken = result.token;
-            localStorage.setItem('sessionToken', sessionToken);
+            storageSet('sessionToken', sessionToken);
+            // Re-read the server metadata: the server regenerates its
+            // certificate when the LAN IP changes (or near expiry), which would
+            // leave a stale pinned hash and silently downgrade WebTransport to
+            // the slower WebSocket fallback on a cert mismatch. Best-effort —
+            // a failure keeps the page-load copy.
+            try {
+                const infoResp = await fetchWithTimeout('/api/info');
+                if (infoResp.ok) serverInfo = await infoResp.json();
+            } catch (e) { /* keep the page-load copy */ }
+            // Remember this PC so the next visit pairs automatically.
+            rememberServer(pin);
             // What the PC's apps will list as the mic input (if the server
             // renamed the endpoint) — shown in Diagnostics.
             serverMicName = result.mic_name || null;
@@ -992,10 +1140,24 @@ async function doPair() {
             refreshMonitorState();
         } else {
             pinInput.classList.add('error');
-            showToast(result.error || 'Incorrect PIN');
+            if (wasAuto) {
+                // The remembered PIN no longer works (rotated on the PC with
+                // `newpin`, or a different server on this address now).
+                forgetStoredServer();
+                showToast('PIN changed on the PC — enter the new PIN');
+            } else {
+                showToast(result.error || 'Incorrect PIN');
+            }
         }
     } catch (e) {
-        showToast('Connection error');
+        if (wasAuto) {
+            // The server answered /api/info at page load but /api/pair failed
+            // at the network level — keep the remembered server (it may just be
+            // a blip) and let the user try manually.
+            showToast("Couldn't reach the PC — check the steps below");
+        } else {
+            showToast('Connection error');
+        }
     } finally {
         pairBtn.disabled = false;
         pairBtn.textContent = 'Connect';
@@ -1288,7 +1450,7 @@ function loadCapturePrefs() {
 }
 
 function saveCapturePrefs(prefs) {
-    localStorage.setItem('quicmic_capture', JSON.stringify(prefs));
+    storageSet('quicmic_capture', JSON.stringify(prefs));
 }
 
 /** The mic constraints, shared by the initial setup and the recovery ladder. */
@@ -1697,9 +1859,12 @@ async function connectTransport() {
 }
 
 async function connectWebTransport(sampleRate) {
-    // Bracket an IPv6 literal for the URL authority (RFC 3986); IPv4 is unchanged.
-    // The server brackets the same way in its printed/QR URL (`url_host`).
-    const host = serverInfo.lan_ip.includes(':') ? `[${serverInfo.lan_ip}]` : serverInfo.lan_ip;
+    // Dial the same host the page itself loaded from: it is guaranteed to reach
+    // this server (and to satisfy the page's `connect-src 'self'` CSP), while the
+    // server-reported LAN IP can be stale or unreachable from here (multi-homed
+    // server, manual URL entry). Bracket an IPv6 literal (RFC 3986).
+    const pageHost = location.hostname;
+    const host = pageHost.includes(':') ? `[${pageHost}]` : pageHost;
     const url = `https://${host}:${serverInfo.wt_port}/${sessionToken}?sr=${sampleRate}`;
 
     // Decode the base64 cert hash into bytes for certificate pinning.
@@ -1744,7 +1909,7 @@ async function connectWebTransport(sampleRate) {
         : datagramStream.writable;
     datagramWriter = writable.getWriter();
     transportType = 'WebTransport';
-    try { localStorage.setItem('quicmic_transport', 'WebTransport'); } catch (e) {}
+    storageSet('quicmic_transport', 'WebTransport');
     console.log('[transport] connected via WebTransport (QUIC/UDP)');
 }
 
@@ -1765,7 +1930,7 @@ async function connectWebSocket(sampleRate) {
         ws.onopen = () => {
             clearTimeout(timeoutId);
             transportType = 'WebSocket';
-            try { localStorage.setItem('quicmic_transport', 'WebSocket'); } catch (e) {}
+            storageSet('quicmic_transport', 'WebSocket');
             console.log('[transport] connected via WebSocket (TCP — fallback)');
             // If the browser supports WebTransport yet we still landed on WebSocket,
             // the low-latency UDP/QUIC path failed. On a LAN the overwhelming cause is

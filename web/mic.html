@@ -47,15 +47,18 @@
             <input type="tel" id="pin-input" class="pin-input" maxlength="6" inputmode="numeric" pattern="[0-9]{6}"
                 required placeholder="&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="off" aria-label="6-digit pairing PIN">
             <button id="pair-btn" class="btn btn-primary btn-big">Connect</button>
+            <button id="diag-btn" class="btn btn-secondary btn-block diag-btn">Diagnose connection</button>
+            <div id="diag-results" class="diag-results" hidden></div>
             <ol class="pair-steps">
                 <li>Open the QuicMic window on your computer</li>
                 <li>Scan the QR code, or type the 6-digit PIN</li>
                 <li>Tap Connect &mdash; your phone becomes the PC mic</li>
+                <li>Once paired, this phone remembers the PC and reconnects by itself</li>
             </ol>
         </div>
 
         <div id="server-lost" class="server-lost" role="alert" hidden>
-            <div class="server-lost-msg">Connection to the server was lost.<br>Refresh the page to reconnect.</div>
+            <div class="server-lost-msg">Connection to the server was lost.<br>Reload the page to reconnect automatically.</div>
             <button id="reload-btn" class="btn btn-primary">Reload</button>
         </div>
     </div>

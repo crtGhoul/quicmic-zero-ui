@@ -56,8 +56,12 @@ self.addEventListener('fetch', function (e) {
   if (!isCacheable(e.request)) return;
   e.respondWith(
     caches.match(e.request).then(function (hit) {
-      if (hit) return hit;
-      return fetch(e.request).then(function (res) {
+      // Stale-while-revalidate: serve the cached shell instantly, but always
+      // refresh it in the background so the next load converges to the newest
+      // assets. A pure cache-first handler would serve a stale app.js forever —
+      // the server's no-cache + ETag revalidation would never get a chance —
+      // stranding the phone on outdated client code after a server update.
+      var refresh = fetch(e.request).then(function (res) {
         // Cache a copy of fresh shell assets for next time.
         if (res && res.ok) {
           var copy = res.clone();
@@ -65,6 +69,12 @@ self.addEventListener('fetch', function (e) {
         }
         return res;
       });
+      if (hit) {
+        // The cached copy already served; a failed refresh (offline) is ignored.
+        refresh.catch(function () {});
+        return hit;
+      }
+      return refresh;
     })
   );
 });

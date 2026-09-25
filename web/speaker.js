@@ -14,6 +14,10 @@ const meterCtx = $('meter').getContext('2d');
 
 let ctx = null, player = null, gainNode = null, ws = null;
 let frames = 0, underruns = 0, startedAt = 0, live = false;
+// True while a connect attempt is in flight (audio init / worklet / socket
+// setup). Guards against double-tap and auto-connect racing a manual tap:
+// without it two attempts would orphan a second AudioContext + WebSocket.
+let connecting = false;
 let volume = 0.8, autoConn = true, latencyPreset = 'balanced';
 let toneNodes = null;
 
@@ -41,6 +45,7 @@ function drawMeter(rms) {
 
 function teardown() {
   live = false;
+  connecting = false;
   try { if (ws) ws.close(); } catch (e) { /* noop */ }
   ws = null;
   try { if (ctx) ctx.close(); } catch (e) { /* noop */ }
@@ -57,17 +62,31 @@ async function connect() {
     setStatus('', 'not connected');
     return;
   }
+  // One attempt at a time (see `connecting` above).
+  if (connecting) return;
   const tok = token();
   if (!tok) {
     setStatus('bad', 'pair on the Mic tab first');
     return;
   }
+  // A leftover local-test-tone context must not be reused for streaming:
+  // stop the tone and drop that context before building the stream graph.
+  stopTone();
+  if (ctx) { try { await ctx.close(); } catch (e) { /* noop */ } ctx = null; }
+  connecting = true;
   try {
     setStatus('', 'starting audio…');
     ctx = new (window.AudioContext || window.webkitAudioContext)({
       sampleRate: 48000, latencyHint: 'interactive',
     });
-    await ctx.resume();
+    // resume() never settles without a user gesture (auto-connect on page
+    // load): time out instead of hanging on "starting audio…" forever, so
+    // the user can tap the button (a real gesture) and retry.
+    await Promise.race([
+      ctx.resume(),
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error('audio blocked — tap TAP TO CONNECT to allow audio')), 4000)),
+    ]);
     await ctx.audioWorklet.addModule('speaker-worklet.js');
     player = new AudioWorkletNode(ctx, 'pcm-player', { outputChannelCount: [2] });
     player.port.postMessage({ prebuffer: LATENCY_PRESETS[latencyPreset] || 5 });
@@ -85,6 +104,7 @@ async function connect() {
     ws = new WebSocket(proto + location.host + '/speaker-ws?token=' + encodeURIComponent(tok));
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
+      connecting = false;
       live = true;
       startedAt = Date.now();
       frames = 0; underruns = 0;
@@ -99,6 +119,7 @@ async function connect() {
       player.port.postMessage(ev.data, [ev.data]);
     };
     ws.onclose = () => {
+      connecting = false;
       if (live) {
         setStatus('bad', 'disconnected');
         teardown();
@@ -120,11 +141,16 @@ function applyVolume(v) {
   try { localStorage.setItem(LS_VOL, String(Math.round(volume * 100))); } catch (e) { /* noop */ }
 }
 
+function stopTone() {
+  if (!toneNodes) return;
+  try { toneNodes.osc.stop(); } catch (e) { /* noop */ }
+  toneNodes = null;
+  $('btnTone').textContent = 'Play local test tone';
+}
+
 function toggleTone() {
   if (toneNodes) {
-    try { toneNodes.osc.stop(); } catch (e) { /* noop */ }
-    toneNodes = null;
-    $('btnTone').textContent = 'Play local test tone';
+    stopTone();
     return;
   }
   const start = async () => {

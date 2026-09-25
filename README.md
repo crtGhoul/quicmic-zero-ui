@@ -90,6 +90,10 @@ The installed app opens straight to the chooser, works offline from cache for th
 2. **Phone** (on the same Wi-Fi): scan the QR with your camera, **or** open the URL in your browser and type the PIN.
 3. Done — pairing sticks, you only do it once.
 
+### 🖥️ System-tray mode (Windows)
+
+Don't want a console window sitting around? Run the exe with `--tray`: when double-clicked it hides its console and lives as a system-tray icon instead — right-click it for a status line, **Show connection QR** (opens a big scannable pairing code in your browser), and **Quit**. Launched from a terminal, your console stays put and the tray icon just runs alongside it. Everything else — the console commands, the phone UI, the audio path — works exactly the same.
+
 ### 🎤 Mic — phone as wireless PC microphone
 
 Tap the big button to mute/unmute. Gestures:
