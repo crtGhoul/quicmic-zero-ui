@@ -4,13 +4,17 @@
    saved is reused here; the server gates /speaker-ws on it. */
 
 const $ = (id) => document.getElementById(id);
-const LS_VOL = 'spk_volume', LS_AUTOCONN = 'spk_autoconnect';
+const LS_VOL = 'spk_volume', LS_AUTOCONN = 'spk_autoconnect', LS_LAT = 'spk_latency';
+
+// Jitter-buffer presets: frames of 20 ms audio held before playback starts.
+// More buffer = smoother on flaky Wi-Fi, at the cost of delay.
+const LATENCY_PRESETS = { low: 2, balanced: 5, smooth: 12 };
 
 const meterCtx = $('meter').getContext('2d');
 
 let ctx = null, player = null, gainNode = null, ws = null;
 let frames = 0, underruns = 0, startedAt = 0, live = false;
-let volume = 0.8, autoConn = true;
+let volume = 0.8, autoConn = true, latencyPreset = 'balanced';
 let toneNodes = null;
 
 function setStatus(cls, text) {
@@ -66,6 +70,7 @@ async function connect() {
     await ctx.resume();
     await ctx.audioWorklet.addModule('speaker-worklet.js');
     player = new AudioWorkletNode(ctx, 'pcm-player', { outputChannelCount: [2] });
+    player.port.postMessage({ prebuffer: LATENCY_PRESETS[latencyPreset] || 5 });
     gainNode = ctx.createGain();
     gainNode.gain.value = volume;
     player.connect(gainNode);
@@ -145,9 +150,18 @@ function toggleTone() {
     const v = parseInt(localStorage.getItem(LS_VOL), 10);
     if (!isNaN(v)) volume = Math.min(100, Math.max(0, v)) / 100;
     autoConn = localStorage.getItem(LS_AUTOCONN) !== '0';
+    const savedLat = localStorage.getItem(LS_LAT);
+    if (savedLat && LATENCY_PRESETS[savedLat]) latencyPreset = savedLat;
   } catch (e) { /* noop */ }
   $('volSlider').value = Math.round(volume * 100);
   $('autoConnChk').checked = autoConn;
+  $('latencySel').value = latencyPreset;
+  $('latencySel').addEventListener('change', (e) => {
+    latencyPreset = e.target.value;
+    try { localStorage.setItem(LS_LAT, latencyPreset); } catch (e2) { /* noop */ }
+    // Applies live: the worklet briefly re-buffers at the new depth.
+    if (player) player.port.postMessage({ prebuffer: LATENCY_PRESETS[latencyPreset] });
+  });
   $('volSlider').addEventListener('input', (e) => applyVolume(e.target.value / 100));
   $('autoConnChk').addEventListener('change', (e) => {
     autoConn = e.target.checked;

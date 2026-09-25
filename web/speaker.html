@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Speaker — QuicMic</title>
 <meta name="description" content="Stream your PC's audio to this phone and out through your Bluetooth earbuds.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta name="theme-color" content="#050508">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,7 +19,7 @@
 <div class="app">
   <!-- Shared app nav: Mic / Drop / Speaker switcher (one app, three screens). -->
   <nav class="appnav" aria-label="App sections">
-    <a class="appnav-link" href="index.html">🎤 Mic</a>
+    <a class="appnav-link" href="mic.html">🎤 Mic</a>
     <a class="appnav-link" href="drop.html">📦 Drop</a>
     <a class="appnav-link active" href="speaker.html" aria-current="page">🔊 Speaker</a>
   </nav>
@@ -43,6 +45,13 @@
       <summary>⚙️ Settings</summary>
       <label class="check"><input type="checkbox" id="autoConnChk" checked>
         <span>Auto-connect<small>Connect on start when this phone is paired.</small></span>
+      </label>
+      <label class="check"><span>Stream latency<small>Buffer against Wi-Fi jitter. Higher is smoother but more delayed.</small></span>
+        <select id="latencySel" class="select">
+          <option value="low">Low · ~40 ms</option>
+          <option value="balanced">Balanced · ~100 ms</option>
+          <option value="smooth">Smooth · ~240 ms</option>
+        </select>
       </label>
       <button id="btnTone" class="btn">Play local test tone</button>
       <p class="hint">The test tone plays on this phone only (no network) — a quick way to prove your earbuds are routed before streaming.</p>

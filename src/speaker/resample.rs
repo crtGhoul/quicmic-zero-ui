@@ -4,7 +4,7 @@
 //! phase-correct: a fractional carry keeps long-term rate exact, so a
 //! continuous tone comes out at the right pitch with no drift.
 
-use super::{FRAME_SAMPLES, SAMPLE_RATE, CHANNELS};
+use super::{CHANNELS, FRAME_SAMPLES, SAMPLE_RATE};
 
 /// Converts interleaved f32 source samples to 20 ms stereo frames at 48 kHz.
 pub struct Converter {
@@ -59,8 +59,8 @@ impl Converter {
             self.pos += FRAME_SAMPLES as f64 * step;
             // Drop input frames strictly before floor(pos), keeping one for overlap.
             let first_keep = (self.pos.floor() as u64).saturating_sub(1);
-            let drop_frames = (first_keep.saturating_sub(self.base) as usize)
-                .min(self.acc.len() / self.in_ch);
+            let drop_frames =
+                (first_keep.saturating_sub(self.base) as usize).min(self.acc.len() / self.in_ch);
             if drop_frames > 0 {
                 self.acc.drain(..drop_frames * self.in_ch);
                 self.base += drop_frames as u64;
@@ -103,17 +103,22 @@ mod tests {
         let mut phase: f64 = 0.0;
         let step = 2.0 * std::f64::consts::PI * freq / in_rate as f64;
         for _ in 0..100 {
-            let chunk: Vec<f32> = (0..441).map(|_| {
-                let s = phase.sin() as f32;
-                phase += step;
-                s
-            }).collect();
+            let chunk: Vec<f32> = (0..441)
+                .map(|_| {
+                    let s = phase.sin() as f32;
+                    phase += step;
+                    s
+                })
+                .collect();
             conv.push(&chunk);
         }
         let mut frames = Vec::new();
         conv.drain(&mut frames);
         assert!(!frames.is_empty());
-        let left: Vec<f32> = frames.iter().flat_map(|f| f.iter().step_by(2).copied()).collect();
+        let left: Vec<f32> = frames
+            .iter()
+            .flat_map(|f| f.iter().step_by(2).copied())
+            .collect();
         // Right channel must equal left (mono duplicated).
         for f in &frames {
             for (l, r) in f.iter().step_by(2).zip(f.iter().skip(1).step_by(2)) {

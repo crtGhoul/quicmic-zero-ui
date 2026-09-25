@@ -191,7 +191,7 @@ pub(super) async fn handle_pair(
         *guard = Some(token.clone());
     }
 
-    info!("Device paired successfully");
+    info!(peer = %ip, "Phone paired successfully");
 
     Json(PairResponse {
         success: true,

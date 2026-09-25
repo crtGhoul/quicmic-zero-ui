@@ -10,13 +10,28 @@ This is what you see when you start the exe. It shows a QR code, the phone URL, 
 
 ![PC console window](docs/screenshots/pc-console.png)
 
+While it runs, the window logs what's happening: `Phone paired successfully`, `Mic client connected`, `Speaker client streaming`, and disconnects — each with the phone's IP, so you can see at a glance what's live.
+
 ## The phone screens
 
-Switch between the three tabs at the top of any page.
+Scanning the QR now opens a **landing page** — pick Mic, Drop, or Speaker. It can also be installed like a real app (see below).
+
+![Landing page](docs/screenshots/landing.png)
+
+Switch between the three screens from the top nav on any page.
 
 | 🎤 Mic | 📦 Drop | 🔊 Speaker |
 |---|---|---|
 | ![Mic tab](docs/screenshots/phone-mic.png) | ![Drop tab](docs/screenshots/phone-drop.png) | ![Speaker tab](docs/screenshots/phone-speaker.png) |
+
+### Install as an app (PWA)
+
+No App Store needed — the pages are an installable web app:
+
+- **iPhone:** open the landing page in Safari → Share → **Add to Home Screen**. It opens fullscreen with the QuicMic icon.
+- **Android:** open it in Chrome — you'll get an **Install as an app** prompt (or Menu → Add to Home screen).
+
+The installed app opens straight to the chooser, works offline from cache for the UI shell, and the pairing PIN rides along in the link.
 
 ## Quick start
 
@@ -50,7 +65,7 @@ Photos, files, text & links straight over your local network, peer-to-peer and e
 2. Open the **Mic** tab once and pair (Speaker reuses that pairing).
 3. Open the **Speaker** tab, tap **Connect**, then play anything on the PC — music, video, games.
 
-The page shows a live level meter, a volume slider, and frame stats. ⚙ Settings has auto-connect and an 880 Hz test tone to check the phone→earbuds path without the PC.
+The page shows a live level meter, a volume slider, and frame stats. ⚙ Settings has auto-connect, an 880 Hz test tone to check the phone→earbuds path without the PC, and a **Stream latency** preset (Low ~40 ms / Balanced ~100 ms / Smooth ~240 ms) — a jitter buffer that trades a little delay for stutter-free audio on flaky Wi-Fi. If you hear dropouts, switch it up a notch; it applies live.
 
 > Heads-up: the three tabs are separate pages, so switching tabs unloads the current one. To run Mic and Speaker **at the same time**, open them in two browser tabs side by side.
 

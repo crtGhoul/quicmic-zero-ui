@@ -222,6 +222,14 @@ details.settings .btn { margin-top: 12px; width: 100%; }
 }
 .check small { display: block; color: var(--mut); font-size: 12px; margin-top: 2px; }
 
+/* dropdown used by the speaker latency setting */
+.select {
+  margin-left: auto; flex: none;
+  background: var(--card); color: var(--txt);
+  border: 1px solid var(--acc); border-radius: 10px;
+  font: inherit; font-size: 14px; padding: 8px 10px; cursor: pointer;
+}
+
 /* speaker tab */
 .bigbtn {
   width: min(62vw, 210px); aspect-ratio: 1; border-radius: 50%;

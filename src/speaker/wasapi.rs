@@ -48,7 +48,11 @@ fn run(tx: broadcast::Sender<Vec<f32>>) -> anyhow::Result<()> {
         let subformat: Option<u128> = if tag == WAVE_FORMAT_EXTENSIBLE {
             let ext = pwfx as *const WAVEFORMATEXTENSIBLE;
             // addr_of! + read_unaligned: safe regardless of struct packing.
-            Some(std::ptr::addr_of!((*ext).SubFormat).read_unaligned().to_u128())
+            Some(
+                std::ptr::addr_of!((*ext).SubFormat)
+                    .read_unaligned()
+                    .to_u128(),
+            )
         } else {
             None
         };

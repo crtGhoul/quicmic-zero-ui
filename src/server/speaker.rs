@@ -5,8 +5,10 @@
 //! f32-LE PCM frames (7680 bytes each) from the shared broadcast channel; any
 //! number of phones may listen at once.
 
+use std::net::SocketAddr;
+
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -26,6 +28,7 @@ pub(super) async fn handle_speaker_ws(
     ws: WebSocketUpgrade,
     Query(query): Query<SpeakerQuery>,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> Response {
     let provided_token = match query.token {
         Some(t) => t,
@@ -57,11 +60,12 @@ pub(super) async fn handle_speaker_ws(
         }
     };
 
-    ws.on_upgrade(move |socket| pump(socket, tx))
+    info!(peer = %peer, "Speaker client connected");
+    ws.on_upgrade(move |socket| pump(socket, tx, peer))
 }
 
 /// Forward broadcast PCM frames to one phone until it disconnects or errors.
-async fn pump(mut socket: WebSocket, tx: broadcast::Sender<Vec<f32>>) {
+async fn pump(mut socket: WebSocket, tx: broadcast::Sender<Vec<f32>>, peer: SocketAddr) {
     let mut rx = tx.subscribe();
     let mut sent: u64 = 0;
     loop {
@@ -84,8 +88,8 @@ async fn pump(mut socket: WebSocket, tx: broadcast::Sender<Vec<f32>>) {
         }
         sent += 1;
         if sent == 1 {
-            info!("first speaker frame sent to a client");
+            info!(peer = %peer, "Speaker client streaming");
         }
     }
-    info!("speaker client disconnected after {sent} frames");
+    info!(peer = %peer, speaker_frames = sent, "Speaker client disconnected");
 }

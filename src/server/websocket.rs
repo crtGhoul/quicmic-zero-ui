@@ -1,10 +1,11 @@
 //! WebSocket fallback transport (TCP). Rides on the HTTP server via the
 //! `/ws` upgrade route; carries the same PCM packets as WebTransport.
 
+use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -26,6 +27,7 @@ pub(super) async fn handle_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(query): Query<WsQuery>,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> Response {
     // Validate token
     let provided_token = match query.token {
@@ -77,7 +79,7 @@ pub(super) async fn handle_ws_upgrade(
     // drop. Otherwise the slot would leak and lock out every future client until
     // the server restarts.
     let guard = ConnectionGuard::new(state.stream.is_connected.clone());
-    ws.on_upgrade(move |socket| handle_ws_connection(socket, state, guard, cancel_rx))
+    ws.on_upgrade(move |socket| handle_ws_connection(socket, state, guard, cancel_rx, peer))
 }
 
 /// Process an authenticated WebSocket connection.
@@ -92,9 +94,10 @@ async fn handle_ws_connection(
     state: AppState,
     guard: ConnectionGuard,
     mut cancel_rx: tokio::sync::broadcast::Receiver<()>,
+    peer: SocketAddr,
 ) {
     // is_connected is already true (set in handle_ws_upgrade).
-    info!("WebSocket client connected (fallback mode)");
+    info!(peer = %peer, "Mic client connected (WebSocket fallback)");
 
     let _guard = guard;
 
@@ -146,5 +149,5 @@ async fn handle_ws_connection(
         }
     }
 
-    info!("WebSocket client disconnected");
+    info!(peer = %peer, "Mic client disconnected (WebSocket)");
 }

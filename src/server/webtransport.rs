@@ -238,8 +238,8 @@ async fn handle_session(
     let connection = session_request.accept().await?;
 
     info!(
-        authority = %connection.remote_address(),
-        "WebTransport client connected"
+        peer = %connection.remote_address(),
+        "Mic client connected (WebTransport)"
     );
 
     // Stats are per session: reset them when this fresh connection starts so the
@@ -263,7 +263,7 @@ async fn handle_session(
                 if let Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) = cancel {
                     warn!(skipped = n, "Cancel channel lagged; ending session");
                 }
-                info!("WebTransport session ended (handover or shutdown)");
+                info!("Mic client disconnected (WebTransport: handover or shutdown)");
                 break;
             }
             res = connection.receive_datagram() => {
