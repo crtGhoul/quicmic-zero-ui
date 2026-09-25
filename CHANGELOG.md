@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-25
+
+### Fixed
+- **Connection / auto-connect overhaul (the big one):** the PC used to regenerate its TLS certificate and pairing PIN on every launch, so restarting the app invalidated the phone's session, remembered server, and accepted certificate all at once — auto-connect could never survive a restart. The PC now keeps a persistent identity (certificate, key, PIN, LAN IP) in `%APPDATA%\QuicMic`, reused while the LAN IP is unchanged and the certificate is fresh. The phone remembers the paired server, PIN, and certificate hash and silently re-pairs after a PC restart. QR pairing still works and clears stale state.
+- `newpin` now actually revokes the active session token (it claimed old phones had to re-pair but left their token valid).
+- Installed phone PWAs no longer serve stale app files forever after a PC update: the service worker now revalidates instead of cache-first-permanent.
+- Pairing no longer gets stuck on "Connecting..." if it fails, and storage failures (e.g. private browsing) no longer turn a successful pairing into a fake "Connection error".
+- WebTransport now connects to the page's own hostname instead of a possibly stale server-reported LAN IP, and `/api/info` is refreshed after pairing so the certificate hash can't go stale.
+- Drop: selecting/pasting files while disconnected now says so instead of failing silently; a malformed matchmaker URL shows a clear error instead of retrying forever.
+- Speaker: removed the synthetic-tone busy-spin that could pin a CPU core at 100%; WASAPI capture failures now disable Speaker with the real reason instead of streaming silence; added an iOS-friendly timeout around audio startup and cleanup of orphaned audio contexts/sockets.
+
+### Added
+- `--tray` flag (Windows): double-click launch hides the console and parks the app in the notification area with a status line, **Show connection QR**, and **Quit** (graceful shutdown). Terminal launches keep the console visible.
+- `/qr` page: a large scannable pairing QR served by the PC itself.
+- **Diagnose connection** button on the phone pairing page: checks server reachability, HTTPS/certificate status, WebTransport support, and flags common Wi-Fi/VPN/firewall causes.
+
 ## [0.4.0] - 2026-09-25
 
 ### Added
