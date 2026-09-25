@@ -220,6 +220,8 @@ mod tests {
             cancel_tx,
             is_shutdown: Arc::new(AtomicBool::new(false)),
             device_ok: Arc::new(AtomicBool::new(true)),
+            mic_peer: Arc::new(parking_lot::Mutex::new(None)),
+            speaker_peers: Arc::new(parking_lot::Mutex::new(Vec::new())),
         };
         AppState {
             stream,

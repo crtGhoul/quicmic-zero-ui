@@ -237,6 +237,8 @@ async fn handle_session(
 
     let connection = session_request.accept().await?;
 
+    let peer_ip = connection.remote_address().ip().to_string();
+    *stream.mic_peer.lock() = Some(peer_ip.clone());
     info!(
         peer = %connection.remote_address(),
         "Mic client connected (WebTransport)"
@@ -326,6 +328,16 @@ async fn handle_session(
         lost = loss.lost,
         "WebTransport datagram stream finished"
     );
+
+    // Single exit point for every path above (cancel, error, natural end).
+    // Only clear if the slot still holds our IP: a handover may already have
+    // replaced it with the new client's.
+    {
+        let mut guard = stream.mic_peer.lock();
+        if guard.as_deref() == Some(peer_ip.as_str()) {
+            *guard = None;
+        }
+    }
 
     Ok(())
 }

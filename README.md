@@ -12,6 +12,21 @@ This is what you see when you start the exe. It shows a QR code, the phone URL, 
 
 While it runs, the window logs what's happening: `Phone paired successfully`, `Mic client connected`, `Speaker client streaming`, and disconnects — each with the phone's IP, so you can see at a glance what's live.
 
+### Console commands
+
+The window is interactive — type a command and press Enter while it runs:
+
+- `status` — live panel: connected Mic/Speaker clients, mic output device, volume/gain/gate/latency, monitor state
+- `qr` — reprint the pairing QR code (handy if it scrolled away)
+- `devices` — list PC audio output devices
+- `device <n|name>` — switch the mic output device live, no restart
+- `volume <0-5>` / `gain <0.2-3>` / `gate <-100-0>` / `latency <0-500>` — DSP settings, applied immediately
+- `monitor <on|off>` — mute the hear-yourself monitor
+- `theme <neon|ghoul|plain>` — switch the banner theme live
+- `quit` — graceful shutdown (same as Ctrl+C)
+
+The phone UI stays the source of truth for saved settings — it can reapply volume/gain/gate/latency when it reconnects. You can also pick the theme at startup: `quicmic.exe --theme ghoul`.
+
 ## The phone screens
 
 Scanning the QR now opens a **landing page** — pick Mic, Drop, or Speaker. It can also be installed like a real app (see below).

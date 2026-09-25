@@ -43,6 +43,12 @@ pub struct StreamState {
     /// output device is lost (disabled/removed) and the supervisor is rebuilding it;
     /// surfaced to the client via `/api/stats` so the UI can warn the user.
     pub device_ok: Arc<AtomicBool>,
+    /// IP of the currently connected Mic client (`None` when idle). Set by both
+    /// transports on connect/disconnect; read by the PC console status panel.
+    pub mic_peer: Arc<parking_lot::Mutex<Option<String>>>,
+    /// IPs of the currently connected Speaker clients. Updated on
+    /// connect/disconnect; read by the PC console status panel.
+    pub speaker_peers: Arc<parking_lot::Mutex<Vec<String>>>,
 }
 
 /// Consecutive failed PIN attempts (per client IP) before a lockout kicks in.

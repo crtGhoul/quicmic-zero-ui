@@ -447,12 +447,16 @@ fn open_output_stream(
 /// recovers automatically with no restart. Blocks until the initial stream is
 /// built (or fails), so a bad `--device` name remains a fatal startup error.
 ///
+/// `device_select` is shared with the PC console: the `device` command writes a
+/// new selection into it and the supervisor notices within ~1s, drops the old
+/// stream, and rebuilds on the new device. `None` means the system default.
+///
 /// `output_volume` is applied in the output stage of this stream. Passing
 /// `monitor_enabled` as `Some` turns this into the hear-yourself monitor
 /// supervisor: the device is picked by `find_monitor_device` (a physical output)
 /// and the flag gates audibility at runtime (see `open_output_stream`).
 pub fn spawn_output_supervisor(
-    device_name: Option<String>,
+    device_select: Arc<parking_lot::Mutex<Option<String>>>,
     ring: Arc<RingBuffer>,
     source_sample_rate: Arc<AtomicU32>,
     latency_threshold: Arc<AtomicU32>,
@@ -468,10 +472,17 @@ pub fn spawn_output_supervisor(
             // The cpal error callback signals here when the active stream dies.
             let (err_tx, err_rx) = mpsc::channel::<()>();
 
+            // How long the supervisor waits on a death signal before re-checking
+            // for a device-switch request from the console.
+            const SWITCH_POLL: Duration = Duration::from_secs(1);
+
+            let selected = || device_select.lock().clone();
+
             // Initial build: report success/failure so a bad device name stays a
             // fatal startup error (as before).
+            let mut built_with = selected();
             let mut stream = match open_output_stream(
-                device_name.as_deref(),
+                built_with.as_deref(),
                 &ring,
                 &source_sample_rate,
                 &latency_threshold,
@@ -490,23 +501,37 @@ pub fn spawn_output_supervisor(
                 }
             };
 
-            // Supervise: rebuild on any device failure.
+            // Supervise: rebuild on any device failure, or when the console
+            // requests a different device.
             loop {
-                // Block until the error callback reports the stream is dead.
-                if err_rx.recv().is_err() {
-                    return; // all senders gone — should not happen; exit quietly.
+                let died = match err_rx.recv_timeout(SWITCH_POLL) {
+                    Ok(()) => true,
+                    Err(mpsc::RecvTimeoutError::Timeout) => false,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return, // senders gone
+                };
+                let wanted = selected();
+                if !died && wanted == built_with {
+                    continue; // spurious wake; nothing changed
                 }
-                device_ok.store(false, Ordering::SeqCst);
-                warn!("Audio output device lost; rebuilding the output stream...");
+                if died {
+                    device_ok.store(false, Ordering::SeqCst);
+                    warn!("Audio output device lost; rebuilding the output stream...");
+                } else {
+                    info!(
+                        "Switching audio output device to {}...",
+                        wanted.as_deref().unwrap_or("system default")
+                    );
+                }
                 drop(stream);
                 while err_rx.try_recv().is_ok() {} // coalesce repeated signals
 
+                built_with = wanted;
                 let mut attempts: u32 = 0;
                 stream = loop {
                     std::thread::sleep(Duration::from_secs(1));
                     attempts += 1;
                     match open_output_stream(
-                        device_name.as_deref(),
+                        built_with.as_deref(),
                         &ring,
                         &source_sample_rate,
                         &latency_threshold,

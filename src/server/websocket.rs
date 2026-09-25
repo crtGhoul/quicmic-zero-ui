@@ -98,6 +98,7 @@ async fn handle_ws_connection(
 ) {
     // is_connected is already true (set in handle_ws_upgrade).
     info!(peer = %peer, "Mic client connected (WebSocket fallback)");
+    *state.stream.mic_peer.lock() = Some(peer.ip().to_string());
 
     let _guard = guard;
 
@@ -150,4 +151,11 @@ async fn handle_ws_connection(
     }
 
     info!(peer = %peer, "Mic client disconnected (WebSocket)");
+    // Only clear if the slot still holds our IP: a handover may already have
+    // replaced it with the new client's.
+    let peer_ip = peer.ip().to_string();
+    let mut guard = state.stream.mic_peer.lock();
+    if guard.as_deref() == Some(peer_ip.as_str()) {
+        *guard = None;
+    }
 }

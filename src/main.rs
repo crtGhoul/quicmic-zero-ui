@@ -1,4 +1,5 @@
 mod audio;
+mod console;
 mod server;
 mod speaker;
 mod tls;
@@ -223,6 +224,11 @@ struct Cli {
     /// without WASAPI loopback (non-Windows).
     #[arg(long)]
     speaker_test_tone: bool,
+
+    /// PC console banner theme: neon (cyan/magenta), ghoul
+    /// (retro hacker green), or plain (no colors). Switchable live via `theme`.
+    #[arg(long, default_value = "neon")]
+    theme: String,
 }
 
 #[tokio::main]
@@ -257,6 +263,14 @@ async fn run() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    let theme = console::Theme::parse(&cli.theme).unwrap_or_else(|| {
+        eprintln!(
+            "Invalid --theme '{}'. Valid themes: ghoul, neon, plain.",
+            cli.theme
+        );
+        std::process::exit(2);
+    });
 
     if cli.list_devices {
         println!("Available audio output devices:");
@@ -325,8 +339,12 @@ async fn run() -> anyhow::Result<()> {
         Arc::new(parking_lot::Mutex::new(None));
 
     // ── Start audio output (supervised: auto-rebuilds if the device drops) ──
+    // `device_select` is shared with the PC console: the `device` command swaps
+    // the selection and the supervisor rebuilds the stream on the new device.
+    let device_select: Arc<parking_lot::Mutex<Option<String>>> =
+        Arc::new(parking_lot::Mutex::new(cli.device.clone()));
     audio::spawn_output_supervisor(
-        cli.device.clone(),
+        device_select.clone(),
         ring.clone(),
         source_sample_rate.clone(),
         latency_threshold.clone(),
@@ -343,7 +361,7 @@ async fn run() -> anyhow::Result<()> {
         let monitor_name: Option<String> = name_opt.clone().filter(|n| !n.is_empty());
         let monitor_ok = Arc::new(AtomicBool::new(false));
         audio::spawn_output_supervisor(
-            monitor_name,
+            Arc::new(parking_lot::Mutex::new(monitor_name)),
             monitor_ring
                 .clone()
                 .expect("monitor ring exists when --monitor-device is given"),
@@ -376,13 +394,17 @@ async fn run() -> anyhow::Result<()> {
 
     // ── Print startup banner ────────────────────────────────────────────
     let url = format!("https://{}:{}", url_host(&lan_ip), cli.port);
-    print_banner(&url, &pin, &identity.cert_hash_base64);
+    let theme_lock: Arc<parking_lot::Mutex<console::Theme>> =
+        Arc::new(parking_lot::Mutex::new(theme));
+    console::print_banner(&theme_lock, &url, &pin, &identity.cert_hash_base64);
 
     // Print QR code for easy mobile pairing (URL includes PIN as hash fragment)
     let qr_url = format!("{}#{}", url, pin);
     if let Err(e) = qr2term::print_qr(&qr_url) {
         info!("Could not print QR code: {}", e);
     }
+    println!("Type 'help' and press Enter for console commands (status, qr, devices, ...).");
+    println!();
 
     // Background, opt-out check for a newer release. Never blocks startup and stays
     // silent unless a strictly newer version is found.
@@ -420,6 +442,8 @@ async fn run() -> anyhow::Result<()> {
         cancel_tx,
         is_shutdown: is_shutdown.clone(),
         device_ok: device_ok.clone(),
+        mic_peer: Arc::new(parking_lot::Mutex::new(None)),
+        speaker_peers: Arc::new(parking_lot::Mutex::new(Vec::new())),
     };
 
     // ── Speaker (PC → phone) capture ────────────────────────────────────
@@ -459,10 +483,13 @@ async fn run() -> anyhow::Result<()> {
     };
 
     // ── Build axum app ──────────────────────────────────────────────────
+    // Captured before the moves below for the console context.
+    let speaker_running = speaker_tx.is_some();
+    let monitor_present = monitor_ring.is_some();
     let app_state = server::AppState {
         stream: stream_state.clone(),
         tls_identity: identity.clone(),
-        pairing_pin: pin,
+        pairing_pin: pin.clone(),
         wt_port: cli.port,
         lan_ip: lan_ip.to_string(),
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
@@ -478,7 +505,7 @@ async fn run() -> anyhow::Result<()> {
     let axum_handle_clone = axum_handle.clone();
 
     // Launch HTTPS server
-    let https_task = tokio::spawn(server::run_https_server(
+    let mut https_task = tokio::spawn(server::run_https_server(
         https_addr,
         router,
         tls_config,
@@ -486,44 +513,112 @@ async fn run() -> anyhow::Result<()> {
     ));
 
     // Launch WebTransport server
-    let wt_task = tokio::spawn(server::run_webtransport_server(
+    let mut wt_task = tokio::spawn(server::run_webtransport_server(
         wt_identity,
         cli.port,
         stream_state.clone(),
     ));
 
-    // Listen for Ctrl+C to shutdown gracefully
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("Graceful shutdown initiated.");
-
-            let had_client = stream_state.is_connected.load(Ordering::SeqCst);
-
-            // Flip the HTTP API to 503 and end the active session. Clients detect
-            // the shutdown by polling the API — their transport close event is
-            // unreliable/late on iOS Safari — so the only thing that matters is
-            // keeping the API up (replying 503) long enough for that poll to land.
-            stream_state.is_shutdown.store(true, Ordering::SeqCst);
-            let _ = stream_state.cancel_tx.send(());
-
-            if had_client {
-                tokio::time::sleep(SHUTDOWN_GRACE_PERIOD).await;
+    // ── Console command loop ────────────────────────────────────────────
+    // A blocking stdin reader forwards typed lines to the main task. With
+    // stdin closed or piped the iterator ends immediately and the thread exits.
+    let ctx = console::Ctx {
+        theme: theme_lock.clone(),
+        url: url.clone(),
+        pin: pin.clone(),
+        cert_hash: identity.cert_hash_base64.clone(),
+        device_select: device_select.clone(),
+        stream: stream_state.clone(),
+        speaker_running,
+        monitor_present,
+    };
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    std::thread::Builder::new()
+        .name("console-input".into())
+        .spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::stdin().lock().lines() {
+                match line {
+                    Ok(l) => {
+                        if cmd_tx.send(l).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
+        })
+        .ok();
 
-            axum_handle.graceful_shutdown(Some(std::time::Duration::from_millis(200)));
-            info!("Graceful shutdown complete. Exiting.");
-        }
-        res = https_task => {
-            // The HTTPS server returns only on a bind failure or crash — fatal,
-            // so surface it instead of exiting silently.
-            res.map_err(|e| anyhow::anyhow!("HTTPS server task failed: {e}"))??;
-        }
-        res = wt_task => {
-            res.map_err(|e| anyhow::anyhow!("WebTransport server task failed: {e}"))??;
+    // Main event loop: Ctrl+C, console commands, or a server task ending.
+    // (A plain select! would exit after the first console command — the loop
+    // keeps serving until something actually ends the process.)
+    let mut cmds_live = true;
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                graceful_shutdown(&stream_state, &axum_handle).await;
+                break;
+            }
+            cmd = async {
+                if cmds_live {
+                    cmd_rx.recv().await
+                } else {
+                    std::future::pending::<Option<String>>().await
+                }
+            } => {
+                match cmd {
+                    Some(line) => {
+                        if console::handle_command(&line, &ctx) == console::Action::Quit {
+                            graceful_shutdown(&stream_state, &axum_handle).await;
+                            break;
+                        }
+                    }
+                    // stdin closed or the input thread died: stop polling commands,
+                    // keep serving until Ctrl+C or a server task ends.
+                    None => cmds_live = false,
+                }
+            }
+            res = &mut https_task => {
+                // The HTTPS server returns only on a bind failure or crash — fatal,
+                // so surface it instead of exiting silently.
+                res.map_err(|e| anyhow::anyhow!("HTTPS server task failed: {e}"))??;
+                break;
+            }
+            res = &mut wt_task => {
+                res.map_err(|e| anyhow::anyhow!("WebTransport server task failed: {e}"))??;
+                break;
+            }
         }
     }
 
     Ok(())
+}
+
+/// Shared graceful-shutdown sequence, used by Ctrl+C and the `quit` console
+/// command. See the F5-handover / disconnect-detection notes in AGENTS.md for
+/// why the 503-then-wait order matters.
+async fn graceful_shutdown(
+    stream_state: &server::StreamState,
+    axum_handle: &axum_server::Handle<SocketAddr>,
+) {
+    info!("Graceful shutdown initiated.");
+
+    let had_client = stream_state.is_connected.load(Ordering::SeqCst);
+
+    // Flip the HTTP API to 503 and end the active session. Clients detect
+    // the shutdown by polling the API — their transport close event is
+    // unreliable/late on iOS Safari — so the only thing that matters is
+    // keeping the API up (replying 503) long enough for that poll to land.
+    stream_state.is_shutdown.store(true, Ordering::SeqCst);
+    let _ = stream_state.cancel_tx.send(());
+
+    if had_client {
+        tokio::time::sleep(SHUTDOWN_GRACE_PERIOD).await;
+    }
+
+    axum_handle.graceful_shutdown(Some(std::time::Duration::from_millis(200)));
+    info!("Graceful shutdown complete. Exiting.");
 }
 
 /// Parse the `--ip` argument into an `IpAddr`, tolerating a bracketed IPv6 literal
@@ -547,38 +642,6 @@ fn url_host(ip: &IpAddr) -> String {
         IpAddr::V6(_) => format!("[{ip}]"),
         IpAddr::V4(_) => ip.to_string(),
     }
-}
-
-fn print_banner(url: &str, pin: &str, cert_hash: &str) {
-    let version = format!("QuicMic v{}", env!("CARGO_PKG_VERSION"));
-    let cert_prefix = if cert_hash.len() >= 20 {
-        &cert_hash[..20]
-    } else {
-        cert_hash
-    };
-
-    // Every row is padded to a fixed inner width so the borders always line up,
-    // regardless of the URL / PIN / hash lengths.
-    const W: usize = 59;
-    let row = |s: &str| println!("║ {:<width$} ║", s, width = W - 2);
-    let step = |s: &str| println!("║ │ {:<width$} │ ║", s, width = W - 6);
-
-    println!();
-    println!("╔{}╗", "═".repeat(W));
-    row(&version);
-    row("");
-    row(&format!("URL:          {}", url));
-    row(&format!("Pairing PIN:  {}", pin));
-    row(&format!("Cert SHA-256: {}", cert_prefix));
-    row("");
-    println!("║ ┌{}┐ ║", "─".repeat(W - 4));
-    step("Setup instructions:");
-    step("1. Scan the QR code below with your phone camera");
-    step(&format!("2. Or open: {}", url));
-    step(&format!("   and enter PIN: {}", pin));
-    println!("║ └{}┘ ║", "─".repeat(W - 4));
-    println!("╚{}╝", "═".repeat(W));
-    println!();
 }
 
 /// Set the terminal window title, best-effort and cross-platform.

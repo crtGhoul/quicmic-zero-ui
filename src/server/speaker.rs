@@ -6,6 +6,7 @@
 //! number of phones may listen at once.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
@@ -61,11 +62,20 @@ pub(super) async fn handle_speaker_ws(
     };
 
     info!(peer = %peer, "Speaker client connected");
-    ws.on_upgrade(move |socket| pump(socket, tx, peer))
+    let peer_ip = peer.ip().to_string();
+    let peers = state.stream.speaker_peers.clone();
+    peers.lock().push(peer_ip.clone());
+    ws.on_upgrade(move |socket| pump(socket, tx, peer, peer_ip, peers))
 }
 
 /// Forward broadcast PCM frames to one phone until it disconnects or errors.
-async fn pump(mut socket: WebSocket, tx: broadcast::Sender<Vec<f32>>, peer: SocketAddr) {
+async fn pump(
+    mut socket: WebSocket,
+    tx: broadcast::Sender<Vec<f32>>,
+    peer: SocketAddr,
+    peer_ip: String,
+    peers: Arc<parking_lot::Mutex<Vec<String>>>,
+) {
     let mut rx = tx.subscribe();
     let mut sent: u64 = 0;
     loop {
@@ -91,5 +101,6 @@ async fn pump(mut socket: WebSocket, tx: broadcast::Sender<Vec<f32>>, peer: Sock
             info!(peer = %peer, "Speaker client streaming");
         }
     }
+    peers.lock().retain(|p| p != &peer_ip);
     info!(peer = %peer, speaker_frames = sent, "Speaker client disconnected");
 }
