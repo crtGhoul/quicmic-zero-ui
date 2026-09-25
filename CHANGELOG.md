@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-25
 
 ### Added
 - Hear-yourself monitoring: `monitor <on|off>` console command and `--monitor-device` flag play the incoming mic audio back through a PC output device (wear headphones to avoid feedback); the phone settings drawer has a monitor toggle when enabled.
@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repeat-safe endpoint matching: the rename now matches on friendly name *or* the driver-set device description, so it keeps finding the endpoint after a previous rename changed its friendly name.
 - Pairing screen improvements: "✓ PIN filled in from QR code" badge when the PIN came from a scan, "Pairing with \<host\>" line, and numbered setup steps.
 - Transport memory: the phone remembers which connection type worked last (WebTransport UDP vs WebSocket TCP) and tries it first, so reconnects on UDP-blocked networks skip the doomed WebTransport attempt.
+
+### Fixed
+- CI: gate Windows-only helpers so macOS/Ubuntu Clippy stays green.
+- Windows build: import `PROPERTYKEY` from `Win32::Foundation` (its home in windows crate 0.61).
 
 ## [0.2.4] - 2026-09-19
 
