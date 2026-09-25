@@ -16,16 +16,19 @@ While it runs, the window logs what's happening: `Phone paired successfully`, `M
 
 The window is interactive — type a command and press Enter while it runs:
 
-- `status` — live panel: connected Mic/Speaker clients, mic output device, volume/gain/gate/latency, monitor state
+- `status` — live panel: connected Mic/Speaker clients, mic output device, speaker capture source, volume/gain/gate/latency, monitor state
 - `qr` — reprint the pairing QR code (handy if it scrolled away)
+- `drop` — print the LocalDrop link (also shown at startup) for phone↔PC file sharing
 - `devices` — list PC audio output devices
 - `device <n|name>` — switch the mic output device live, no restart
+- `speaker-devices` — list PC playback devices the Speaker tab can capture from
+- `speaker-device <n|name>` — switch which device the Speaker tab captures, live (headphones vs Bluetooth vs speakers…)
 - `volume <0-5>` / `gain <0.2-3>` / `gate <-100-0>` / `latency <0-500>` — DSP settings, applied immediately
 - `monitor <on|off>` — mute the hear-yourself monitor
 - `theme <neon|ghoul|plain>` — switch the banner theme live
 - `quit` — graceful shutdown (same as Ctrl+C)
 
-The phone UI stays the source of truth for saved settings — it can reapply volume/gain/gate/latency when it reconnects. You can also pick the theme at startup: `quicmic.exe --theme ghoul`.
+The phone UI stays the source of truth for saved settings — it can reapply volume/gain/gate/latency when it reconnects. You can also pick the theme at startup: `quicmic.exe --theme ghoul`. The speaker capture device is selectable at startup too: `quicmic.exe --speaker-device headphones`.
 
 ## The phone screens
 
@@ -74,6 +77,7 @@ Photos, files, text & links straight over your local network, peer-to-peer and e
 - **Nearby & ready** — set a matchmaker server URL in ⚙ Settings and devices on your network show up automatically. No matchmaker? The Share/Receive codes work fine without one.
 - The status dot turns green when Drop is connected.
 
+> Prefer a standalone page? The console prints the [LocalDrop](https://crtghoul.github.io/localdrop/) PWA link at startup (or type `drop`) — same idea, send pictures/files/text/links between nearby devices, no install needed.
 ### 🔊 Speaker — hear your PC through your earbuds
 
 1. Pair your Bluetooth earbuds to your **phone**.
@@ -81,6 +85,8 @@ Photos, files, text & links straight over your local network, peer-to-peer and e
 3. Open the **Speaker** tab, tap **Connect**, then play anything on the PC — music, video, games.
 
 The page shows a live level meter, a volume slider, and frame stats. ⚙ Settings has auto-connect, an 880 Hz test tone to check the phone→earbuds path without the PC, and a **Stream latency** preset (Low ~40 ms / Balanced ~100 ms / Smooth ~240 ms) — a jitter buffer that trades a little delay for stutter-free audio on flaky Wi-Fi. If you hear dropouts, switch it up a notch; it applies live.
+
+**Which PC audio gets streamed?** By default it's whatever Windows is playing through your *default* output device. To capture a specific one — headphones vs Bluetooth vs speakers — use the PC console: `speaker-devices` lists them, `speaker-device headphones` switches live (or start with `quicmic.exe --speaker-device headphones`).
 
 > Heads-up: the three tabs are separate pages, so switching tabs unloads the current one. To run Mic and Speaker **at the same time**, open them in two browser tabs side by side.
 

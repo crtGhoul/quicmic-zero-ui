@@ -8,11 +8,21 @@
 //! console change can be overridden the next time the phone pairs. The console
 //! is for the PC operator; the phone UI is for the phone user.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+
+use parking_lot::Mutex;
+use tokio::sync::broadcast;
 
 use crate::audio;
 use crate::server::{self, StreamState};
+#[cfg(windows)]
+use crate::speaker;
+
+/// Public companion to the QuicMic 📦 Drop tab: the LocalDrop PWA for
+/// sending pictures, files, text and links between nearby devices.
+/// Printed at startup and by the `drop` console command.
+pub const LOCALDROP_URL: &str = "https://crtghoul.github.io/localdrop/";
 
 /// Banner/status color themes. `Plain` emits no ANSI escapes for terminals
 /// that don't do color.
@@ -147,7 +157,23 @@ pub struct Ctx {
     pub cert_hash: String,
     pub device_select: Arc<parking_lot::Mutex<Option<String>>>,
     pub stream: StreamState,
-    pub speaker_running: bool,
+    /// Broadcast channel feeding `/speaker-ws`; `None` when the Speaker tab
+    /// has no audio source (loopback failed to start, non-Windows without
+    /// `--speaker-test-tone`).
+    pub speaker_tx: Option<broadcast::Sender<Vec<f32>>>,
+    /// Whether the speaker capture thread is currently running.
+    pub speaker_running: Arc<AtomicBool>,
+    /// `true` when the speaker source is the synthetic test tone — device
+    /// selection does not apply.
+    pub speaker_test_tone: bool,
+    /// Selected render endpoint for speaker loopback capture
+    /// (`None` = system default). Bumped through `speaker_generation` so the
+    /// capture thread restarts on the new device.
+    pub speaker_device: Arc<Mutex<Option<String>>>,
+    /// Bumped on every device switch so the old capture thread exits.
+    /// Only the Windows capture path reads it.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub speaker_generation: Arc<AtomicU64>,
     pub monitor_present: bool,
 }
 
@@ -318,7 +344,7 @@ pub fn print_status(ctx: &Ctx) {
         None => panel.row(&format!("{} Mic client:  {}--", dot(false), p.dim)),
     }
     if speaker_peers.is_empty() {
-        let state = if ctx.speaker_running {
+        let state = if ctx.speaker_running.load(Ordering::Relaxed) {
             "idle"
         } else {
             "not running"
@@ -338,6 +364,18 @@ pub fn print_status(ctx: &Ctx) {
     panel.row(&format!(
         "{}Mic device:  {}{}{}",
         p.label, p.value, device_name, dev_state
+    ));
+    let speaker_src = if ctx.speaker_test_tone {
+        "test tone (440 Hz)".to_string()
+    } else {
+        ctx.speaker_device
+            .lock()
+            .clone()
+            .unwrap_or_else(|| "system default".to_string())
+    };
+    panel.row(&format!(
+        "{}Spk source:  {}{}{}",
+        p.label, p.value, speaker_src, p.reset
     ));
     panel.row(&format!(
         "{}Volume:{}{:.2}x  {}Gain:{}{:.2}x  {}Gate:{}{}  {}Latency:{}{}ms",
@@ -378,8 +416,17 @@ pub fn print_help(ctx: &Ctx) {
     let cmds: &[(&str, &str)] = &[
         ("status", "show the live status panel"),
         ("qr", "reprint the pairing QR code"),
+        ("drop", "LocalDrop link for phone↔PC file sharing"),
         ("devices", "list audio output devices"),
         ("device <n|name>", "switch the mic output device live"),
+        (
+            "speaker-devices",
+            "list PC playback devices (speaker capture)",
+        ),
+        (
+            "speaker-device <n|name>",
+            "switch which device the Speaker tab captures",
+        ),
         ("volume <0-5>", "PC output volume multiplier"),
         ("gain <0.2-3>", "mic gain multiplier"),
         ("gate <-100-0>", "noise-gate threshold in dB (-100 = off)"),
@@ -427,6 +474,13 @@ pub fn handle_command(line: &str, ctx: &Ctx) -> Action {
             }
         }
         "device" => cmd_device(ctx, &arg),
+        "drop" => {
+            println!("LocalDrop — send pictures, files, text and links between nearby devices:");
+            println!("  {LOCALDROP_URL}");
+            println!("Open it on any device on your Wi-Fi; no install needed (PWA).");
+        }
+        "speaker-devices" => cmd_speaker_devices(),
+        "speaker-device" => cmd_speaker_device(ctx, &arg),
         "volume" => cmd_set_f32(
             "volume",
             &arg,
@@ -546,4 +600,84 @@ fn cmd_device(ctx: &Ctx, arg: &str) {
         "Switching mic output to {}…",
         pick.as_deref().unwrap_or("system default")
     );
+}
+
+/// `speaker-devices`: list the PC playback endpoints the 🔊 Speaker tab can
+/// capture from (WASAPI loopback sources). Windows only.
+fn cmd_speaker_devices() {
+    #[cfg(windows)]
+    {
+        match speaker::wasapi::list_render_devices() {
+            Ok(devices) => {
+                println!("PC playback devices (speaker capture sources):");
+                for (i, name) in devices.iter().enumerate() {
+                    println!("  [{i}] {name}");
+                }
+            }
+            Err(e) => println!("Could not list playback devices: {e:#}"),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        println!("Speaker capture needs Windows (or --speaker-test-tone).");
+    }
+}
+
+/// `speaker-device <n|name|default>`: switch which PC playback device the
+/// 🔊 Speaker tab captures, live. Bumps the capture generation so the old
+/// capture thread exits, then starts a fresh one on the new endpoint.
+fn cmd_speaker_device(ctx: &Ctx, arg: &str) {
+    if arg.is_empty() {
+        println!("Usage: speaker-device <n|name|default>");
+        return;
+    }
+    if ctx.speaker_test_tone {
+        println!("Speaker is in --speaker-test-tone mode: no capture device to switch.");
+        println!("Restart without --speaker-test-tone to capture system audio.");
+        return;
+    }
+    let Some(tx) = ctx.speaker_tx.clone() else {
+        println!("Speaker capture isn't running on this machine.");
+        return;
+    };
+    #[cfg(windows)]
+    {
+        let names = match speaker::wasapi::list_render_devices() {
+            Ok(n) => n,
+            Err(e) => {
+                println!("Could not list playback devices: {e:#}");
+                return;
+            }
+        };
+        let pick = match speaker::resolve_name(&names, arg) {
+            Ok(p) => p,
+            Err(e) => {
+                println!("{e}");
+                return;
+            }
+        };
+        // Tell the old capture thread to exit, give it a beat to release the
+        // endpoint, then start the new one.
+        *ctx.speaker_device.lock() = pick.clone();
+        ctx.speaker_generation.fetch_add(1, Ordering::Relaxed);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        match speaker::wasapi::spawn(tx, pick.clone(), ctx.speaker_generation.clone()) {
+            Ok(()) => {
+                ctx.speaker_running.store(true, Ordering::Relaxed);
+                println!(
+                    "Speaker now capturing from {}.",
+                    pick.as_deref().unwrap_or("system default")
+                );
+            }
+            Err(e) => {
+                ctx.speaker_running.store(false, Ordering::Relaxed);
+                println!("Capture failed to restart: {e:#}");
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = tx;
+        println!("Speaker capture needs Windows (or --speaker-test-tone).");
+    }
 }

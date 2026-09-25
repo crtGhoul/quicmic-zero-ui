@@ -225,6 +225,13 @@ struct Cli {
     #[arg(long)]
     speaker_test_tone: bool,
 
+    /// Which PC playback device the 🔊 Speaker tab captures (WASAPI loopback).
+    /// A substring of the device name (e.g. "headphones") or the `[n]` index
+    /// from `speaker-devices`; omit to capture the Windows default output.
+    /// Switchable live from the console with `speaker-device`.
+    #[arg(long, value_name = "NAME")]
+    speaker_device: Option<String>,
+
     /// PC console banner theme: neon (cyan/magenta), ghoul
     /// (retro hacker green), or plain (no colors). Switchable live via `theme`.
     #[arg(long, default_value = "neon")]
@@ -404,6 +411,10 @@ async fn run() -> anyhow::Result<()> {
         info!("Could not print QR code: {}", e);
     }
     println!("Type 'help' and press Enter for console commands (status, qr, devices, ...).");
+    println!(
+        "Drop files phone↔PC: {}  (console: 'drop')",
+        console::LOCALDROP_URL
+    );
     println!();
 
     // Background, opt-out check for a newer release. Never blocks startup and stays
@@ -451,6 +462,32 @@ async fn run() -> anyhow::Result<()> {
     // `/speaker-ws`. Capture runs on its own thread and keeps going even with
     // no listeners, so late joiners get audio immediately. A failed capture
     // only disables the Speaker tab — the mic path is unaffected.
+    //
+    // The capture device is selectable: `--speaker-device` at startup or the
+    // `speaker-device` console command at runtime. Switching bumps
+    // `speaker_generation`; the old capture thread sees the bump and exits,
+    // and the console command starts a fresh thread on the new endpoint.
+    let speaker_device: Arc<parking_lot::Mutex<Option<String>>> =
+        Arc::new(parking_lot::Mutex::new(None));
+    let speaker_generation = Arc::new(AtomicU64::new(0));
+    let speaker_running = Arc::new(AtomicBool::new(false));
+
+    // Validate --speaker-device against the real endpoint list (Windows).
+    #[cfg(windows)]
+    if let Some(ref sel) = cli.speaker_device {
+        match speaker::wasapi::list_render_devices() {
+            Ok(names) => match speaker::resolve_name(&names, sel) {
+                Ok(canonical) => *speaker_device.lock() = canonical,
+                Err(e) => warn!("--speaker-device ignored: {e} Using system default."),
+            },
+            Err(e) => warn!("--speaker-device ignored: cannot list devices: {e:#}"),
+        }
+    }
+    #[cfg(not(windows))]
+    if cli.speaker_device.is_some() {
+        warn!("--speaker-device needs Windows — ignored");
+    }
+
     let speaker_tx = {
         let (tx, _) = tokio::sync::broadcast::channel::<Vec<f32>>(64);
         let running = if cli.speaker_test_tone {
@@ -460,7 +497,11 @@ async fn run() -> anyhow::Result<()> {
         } else {
             #[cfg(windows)]
             {
-                match speaker::wasapi::spawn(tx.clone()) {
+                match speaker::wasapi::spawn(
+                    tx.clone(),
+                    speaker_device.lock().clone(),
+                    speaker_generation.clone(),
+                ) {
                     Ok(()) => {
                         info!("speaker: WASAPI loopback capture started");
                         true
@@ -479,12 +520,12 @@ async fn run() -> anyhow::Result<()> {
                 false
             }
         };
+        speaker_running.store(running, Ordering::Relaxed);
         running.then_some(tx)
     };
 
     // ── Build axum app ──────────────────────────────────────────────────
     // Captured before the moves below for the console context.
-    let speaker_running = speaker_tx.is_some();
     let monitor_present = monitor_ring.is_some();
     let app_state = server::AppState {
         stream: stream_state.clone(),
@@ -494,7 +535,7 @@ async fn run() -> anyhow::Result<()> {
         lan_ip: lan_ip.to_string(),
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
         update_status,
-        speaker_tx,
+        speaker_tx: speaker_tx.clone(),
     };
 
     let router = server::build_router(app_state);
@@ -529,7 +570,11 @@ async fn run() -> anyhow::Result<()> {
         cert_hash: identity.cert_hash_base64.clone(),
         device_select: device_select.clone(),
         stream: stream_state.clone(),
-        speaker_running,
+        speaker_tx: speaker_tx.clone(),
+        speaker_running: speaker_running.clone(),
+        speaker_test_tone: cli.speaker_test_tone,
+        speaker_device: speaker_device.clone(),
+        speaker_generation: speaker_generation.clone(),
         monitor_present,
     };
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<String>();

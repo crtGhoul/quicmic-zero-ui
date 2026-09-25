@@ -1,25 +1,53 @@
 //! WASAPI loopback capture (Windows only).
 //!
-//! Opens the default *render* endpoint in loopback mode, which yields exactly
+//! Opens a *render* endpoint in loopback mode, which yields exactly
 //! what the speakers would play — i.e. all PC audio mixed by the system.
 //! Captured audio is converted to 48 kHz stereo f32 and emitted as 20 ms frames.
+//!
+//! The capture device is selectable: [`list_render_devices`] enumerates the
+//! active playback endpoints by friendly name, and [`spawn`] takes an optional
+//! selection (index or name substring, resolved by
+//! [`super::resolve_name`]). A generation counter lets the capture thread exit
+//! cleanly so a supervisor can restart it on a newly chosen device.
 
 use std::ffi::c_void;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use tokio::sync::broadcast;
 use tracing::{error, info};
-use windows::Win32::{Media::Audio::*, System::Com::*};
+use windows::Win32::System::Com::StructuredStorage::PropVariantClear;
+use windows::Win32::{
+    Devices::FunctionDiscovery::PKEY_Device_FriendlyName, Media::Audio::*, System::Com::*,
+    UI::Shell::PropertiesSystem::IPropertyStore,
+};
 
 use super::format::{
     classify_mix_format, i16_to_f32, i32_to_f32, SampleKind, WAVE_FORMAT_EXTENSIBLE,
 };
 use super::resample::Converter;
 
-pub fn spawn(tx: broadcast::Sender<Vec<f32>>) -> anyhow::Result<()> {
+/// Start loopback capture on the chosen render endpoint, in the background.
+///
+/// `device`: `None` → the system default render endpoint; `Some(name)` → a
+/// friendly name previously validated by [`super::resolve_name`] (canonical
+/// form, so it matches exactly here).
+///
+/// `generation`: the capture thread exits as soon as this counter no longer
+/// equals the value it started with — the device-switch path bumps it, waits
+/// a beat, then calls `spawn` again with the new selection.
+pub fn spawn(
+    tx: broadcast::Sender<Vec<f32>>,
+    device: Option<String>,
+    generation: Arc<AtomicU64>,
+) -> anyhow::Result<()> {
+    let my_generation = generation.load(Ordering::Relaxed);
     std::thread::Builder::new()
         .name("wasapi-loopback".into())
         .spawn(move || {
-            if let Err(e) = run(tx) {
+            if let Err(e) = run(tx, device.as_deref(), my_generation, &generation) {
                 error!("loopback capture failed: {e:#}");
             }
         })
@@ -27,13 +55,86 @@ pub fn spawn(tx: broadcast::Sender<Vec<f32>>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run(tx: broadcast::Sender<Vec<f32>>) -> anyhow::Result<()> {
+/// Friendly names of all active render (playback) endpoints, e.g.
+/// `"Speakers (Realtek Audio)"`, `"Headphones (OnePlus Buds)"`.
+/// Order is stable per call and doubles as the `[n]` index for selection.
+pub fn list_render_devices() -> anyhow::Result<Vec<String>> {
+    Ok(enum_render_endpoints()?
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect())
+}
+
+/// Open the selected render endpoint: `None` → system default,
+/// `Some(name)` → exact friendly-name match (validated up front).
+fn open_render_device(wanted: Option<&str>) -> anyhow::Result<(String, IMMDevice)> {
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
-
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        let device: IMMDevice = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+        match wanted {
+            None => {
+                let dev = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+                let name = friendly_name(&dev).unwrap_or_else(|_| "system default".into());
+                Ok((name, dev))
+            }
+            Some(name) => {
+                let endpoints = enum_render_endpoints()?;
+                endpoints
+                    .into_iter()
+                    .find(|(n, _)| n == name)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("speaker device '{name}' disappeared — unplugged?")
+                    })
+            }
+        }
+    }
+}
+
+fn enum_render_endpoints() -> anyhow::Result<Vec<(String, IMMDevice)>> {
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let collection = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)?;
+        let count = collection.GetCount()?;
+        let mut out = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let dev: IMMDevice = collection.Item(i)?;
+            let name = friendly_name(&dev).unwrap_or_else(|_| format!("(unknown endpoint {i})"));
+            out.push((name, dev));
+        }
+        Ok(out)
+    }
+}
+
+fn friendly_name(device: &IMMDevice) -> anyhow::Result<String> {
+    unsafe {
+        let store: IPropertyStore = device.OpenPropertyStore(STGM_READ)?;
+        let mut pv = store.GetValue(&PKEY_Device_FriendlyName)?;
+        let name = pv
+            .Anonymous
+            .Anonymous
+            .Anonymous
+            .pwszVal
+            .to_string()
+            .unwrap_or_default();
+        PropVariantClear(&mut pv)?;
+        if name.is_empty() {
+            anyhow::bail!("empty friendly name");
+        }
+        Ok(name)
+    }
+}
+
+fn run(
+    tx: broadcast::Sender<Vec<f32>>,
+    wanted: Option<&str>,
+    my_generation: u64,
+    generation: &AtomicU64,
+) -> anyhow::Result<()> {
+    unsafe {
+        let (dev_name, device) = open_render_device(wanted)?;
         let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
 
         let pwfx = client.GetMixFormat()?;
@@ -59,12 +160,12 @@ fn run(tx: broadcast::Sender<Vec<f32>>) -> anyhow::Result<()> {
         let kind = classify_mix_format(tag, bits, subformat).ok_or_else(|| {
             anyhow::anyhow!("unsupported mix format: tag={tag} bits={bits} subformat={subformat:?}")
         })?;
-        info!("loopback format: {in_ch}ch {in_rate}Hz {kind:?}");
+        info!("loopback format on '{dev_name}': {in_ch}ch {in_rate}Hz {kind:?}");
 
         // 20 ms buffer; shared mode, loopback flag.
         client.Initialize(
             AUDCLNT_SHAREMODE_SHARED,
-            AUDCLNT_STREAMFLAGS_LOOPBACK as u32,
+            AUDCLNT_STREAMFLAGS_LOOPBACK,
             200_000,
             0,
             pwfx,
@@ -74,12 +175,18 @@ fn run(tx: broadcast::Sender<Vec<f32>>) -> anyhow::Result<()> {
 
         let capture: IAudioCaptureClient = client.GetService()?;
         client.Start()?;
-        info!("loopback capture running — play something on the PC");
+        info!("loopback capture running on '{dev_name}' — play something on the PC");
 
         let mut conv = Converter::new(in_rate, in_ch);
         let mut frames: Vec<Vec<f32>> = Vec::new();
 
         loop {
+            // A device switch bumps the generation: exit so the supervisor's
+            // fresh thread takes over on the new endpoint.
+            if generation.load(Ordering::Relaxed) != my_generation {
+                info!("loopback capture on '{dev_name}' stopping for device switch");
+                return Ok(());
+            }
             let mut packet_frames: u32 = capture.GetNextPacketSize()?;
             if packet_frames == 0 {
                 std::thread::sleep(std::time::Duration::from_millis(5));
