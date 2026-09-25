@@ -145,6 +145,10 @@ pub struct AppState {
     /// `/speaker-ws` listeners. `None` when speaker capture isn't running
     /// (non-Windows without `--speaker-test-tone`, or capture failed to start).
     pub speaker_tx: Option<tokio::sync::broadcast::Sender<Vec<f32>>>,
+    /// Lets `/api/update` ask the main task to shut down after it stages a new
+    /// exe, so the updater batch can swap and restart. Buffered (1) so the
+    /// handler never blocks on a main loop that's already exiting.
+    pub shutdown_tx: tokio::sync::mpsc::Sender<()>,
 }
 
 /// Try to atomically claim the single-connection slot, retrying briefly to

@@ -27,7 +27,7 @@ pub use webtransport::run_webtransport_server;
 
 use api::{
     handle_ca_download, handle_client_state, handle_get_settings, handle_info, handle_monitor,
-    handle_pair, handle_renew, handle_stats, handle_update_settings,
+    handle_pair, handle_renew, handle_stats, handle_update, handle_update_settings,
 };
 use assets::handle_static_assets;
 use speaker::handle_speaker_ws;
@@ -72,6 +72,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/monitor", post(handle_monitor))
         .route("/api/stats", get(handle_stats))
         .route("/api/client-state", post(handle_client_state))
+        .route("/api/update", post(handle_update))
         .route("/ws", get(handle_ws_upgrade))
         .route("/speaker-ws", get(handle_speaker_ws))
         .route("/ca", get(handle_ca_download))
@@ -237,6 +238,9 @@ mod tests {
             pairing_throttle: Arc::new(parking_lot::Mutex::new(PairingThrottle::default())),
             update_status: Arc::new(parking_lot::Mutex::new(None)),
             speaker_tx: None,
+            // Test receiver is dropped immediately, so a handler's send would
+            // fail — but no test exercises the shutdown path.
+            shutdown_tx: tokio::sync::mpsc::channel::<()>(1).0,
         }
     }
 
@@ -350,6 +354,39 @@ mod tests {
         let json = body_json(resp).await;
         assert_eq!(json["success"], true);
         assert!(json["token"].is_string());
+    }
+
+    #[tokio::test]
+    async fn update_requires_session_token() {
+        let state = test_state();
+        *state.stream.session_token.lock() = Some("tok-abc".to_string());
+        let app = build_router(state);
+
+        let update_req = |token: Option<&str>| {
+            let mut builder = Request::builder()
+                .method("POST")
+                .uri("/api/update")
+                .extension(test_conn_info());
+            if let Some(t) = token {
+                builder = builder.header("X-Session-Token", t);
+            }
+            builder.body(Body::empty()).unwrap()
+        };
+
+        // No token → 401.
+        let resp = app.clone().oneshot(update_req(None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Wrong token → 401.
+        let resp = app
+            .clone()
+            .oneshot(update_req(Some("wrong")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // The correct-token path is not exercised here: it would run the real
+        // updater against the network.
     }
 
     #[tokio::test]

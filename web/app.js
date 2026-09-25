@@ -122,6 +122,7 @@ const lrValue = document.getElementById('lr-value');
 const lrReset = document.getElementById('lr-reset');
 const monitorRow = document.getElementById('monitor-row');
 const monitorToggle = document.getElementById('monitor-toggle');
+const updateBtn = document.getElementById('update-btn');
 
 // Zero-UI additions: volume HUD, coach overlay, drawer controls, capture prefs.
 const volumeHud = document.getElementById('volume-hud');
@@ -283,6 +284,7 @@ async function init() {
         updateServerSettings();
     });
     monitorToggle.addEventListener('change', updateMonitor);
+    updateBtn.addEventListener('click', updatePcApp);
 
     lrSlider.addEventListener('input', () => {
         const val = parseInt(lrSlider.value);
@@ -671,6 +673,43 @@ async function updateMonitor() {
     } catch (e) {
         monitorToggle.checked = !enabled; // revert the switch on failure
         showToast('Monitor toggle failed');
+    }
+}
+
+/**
+ * Check for and install a PC-app update (POST /api/update). The server
+ * downloads the latest release from the private GitHub repo, swaps the exe,
+ * and restarts itself — the same flow as the PC console's `update` command.
+ * On success the server goes away briefly; the liveness poll notices the 503
+ * and the pairing screen asks for a reload (the restarted server has a new
+ * cert), so no extra handling is needed here.
+ */
+async function updatePcApp() {
+    if (!sessionToken) {
+        showToast('Pair with the PC first');
+        return;
+    }
+    updateBtn.disabled = true;
+    const originalLabel = updateBtn.innerHTML;
+    updateBtn.innerHTML = '&#128260; Updating&hellip;';
+    try {
+        // The server may spend minutes downloading the exe (its own download
+        // timeout is 5 minutes), so allow a bit more here.
+        const resp = await fetchWithTimeout('/api/update', {
+            method: 'POST',
+            headers: { 'X-Session-Token': sessionToken },
+        }, 360000);
+        const result = await resp.json();
+        if (resp.status === 401) {
+            showToast('Update rejected: session expired, re-pair and try again');
+        } else {
+            showToast(result.message || 'Update finished');
+        }
+    } catch (e) {
+        showToast('Update failed: server unreachable');
+    } finally {
+        updateBtn.disabled = false;
+        updateBtn.innerHTML = originalLabel;
     }
 }
 

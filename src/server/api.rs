@@ -462,6 +462,58 @@ pub(super) async fn handle_client_state(
     StatusCode::NO_CONTENT
 }
 
+#[derive(Serialize)]
+pub(super) struct UpdateResponse {
+    updated: bool,
+    message: String,
+}
+
+/// POST /api/update — run the self-updater, the same flow as the `update`
+/// console command. Requires the session token in the `X-Session-Token`
+/// header (like `/api/stats`).
+///
+/// When a newer release is downloaded and staged, the main task is asked to
+/// shut down so the updater batch can swap the exe and restart it. The
+/// shutdown request is sent *after* the handler builds the response, and the
+/// `reject_during_shutdown` middleware already ran before this handler, so the
+/// response reaches the phone even though the process is about to exit.
+pub(super) async fn handle_update(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let authorized = {
+        let provided = headers.get("x-session-token").and_then(|v| v.to_str().ok());
+        let guard = state.stream.session_token.lock();
+        matches!(
+            (guard.as_ref(), provided),
+            (Some(expected), Some(p)) if super::constant_time_eq(expected.as_bytes(), p.as_bytes())
+        )
+    };
+    if !authorized {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing token").into_response();
+    }
+
+    match crate::self_update::run_update().await {
+        Ok(true) => {
+            // Never blocks: the channel is buffered and the main loop always
+            // drains it before exiting.
+            let _ = state.shutdown_tx.send(()).await;
+            Json(UpdateResponse {
+                updated: true,
+                message: "Update downloaded — restarting into the new version…".to_string(),
+            })
+            .into_response()
+        }
+        Ok(false) => Json(UpdateResponse {
+            updated: false,
+            message: "Already on the latest version.".to_string(),
+        })
+        .into_response(),
+        Err(e) => Json(UpdateResponse {
+            updated: false,
+            message: format!("Update failed: {e:#}"),
+        })
+        .into_response(),
+    }
+}
+
 /// GET /ca — Download the CA certificate in DER format.
 pub(super) async fn handle_ca_download(State(state): State<AppState>) -> impl IntoResponse {
     let mut headers = HeaderMap::new();

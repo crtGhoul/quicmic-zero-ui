@@ -528,6 +528,9 @@ async fn run() -> anyhow::Result<()> {
     // ── Build axum app ──────────────────────────────────────────────────
     // Captured before the moves below for the console context.
     let monitor_present = monitor_ring.is_some();
+    // Lets /api/update ask the main task to shut down after staging a new
+    // exe, so the updater batch can swap and restart.
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
     let app_state = server::AppState {
         stream: stream_state.clone(),
         tls_identity: identity.clone(),
@@ -537,6 +540,7 @@ async fn run() -> anyhow::Result<()> {
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
         update_status,
         speaker_tx: speaker_tx.clone(),
+        shutdown_tx,
     };
 
     let router = server::build_router(app_state);
@@ -603,6 +607,13 @@ async fn run() -> anyhow::Result<()> {
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
+                graceful_shutdown(&stream_state, &axum_handle).await;
+                break;
+            }
+            // `/api/update` staged a new exe: shut down so the updater batch
+            // can swap the file and restart it.
+            _ = shutdown_rx.recv() => {
+                info!("Update requested via API — shutting down to apply.");
                 graceful_shutdown(&stream_state, &axum_handle).await;
                 break;
             }
