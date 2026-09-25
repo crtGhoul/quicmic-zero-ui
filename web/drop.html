@@ -58,14 +58,20 @@
       <h3>Known devices</h3>
       <div id="knownList" class="devlist"></div>
       <details class="settings">
-        <summary>⚙️ Matchmaker server</summary>
-        <label class="fld"><span>Server URL</span>
+        <summary>⚙️ Settings</summary>
+        <label class="fld"><span>Matchmaker server</span>
           <input id="serverInput" type="url" inputmode="url" autocomplete="off"
                  placeholder="wss://your-server.onrender.com">
         </label>
         <p class="hint">No server yet? Deploy your own free one — see
           <b>Tap-to-connect server</b> in the LocalDrop README, then paste the URL here.
           Without a server you can still use Share / Receive codes below.</p>
+        <label class="check"><input type="checkbox" id="autoConnChk" checked>
+          <span>Auto-connect to matchmaker<small>Join on start when a server URL is saved.</small></span>
+        </label>
+        <label class="check"><input type="checkbox" id="vibrateChk" checked>
+          <span>Vibrate on incoming connection<small>Buzz when another device rings you (Android).</small></span>
+        </label>
         <p class="hint">Drop engine: <b id="appVersion">v7</b></p>
       </details>
     </section>

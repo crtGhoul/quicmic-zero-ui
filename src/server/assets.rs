@@ -63,6 +63,10 @@ pub(super) async fn handle_static_assets(uri: Uri, headers: HeaderMap) -> Respon
         return (StatusCode::NOT_FOUND, "File not found").into_response();
     }
 
+    // The Drop screen is the one document allowed to open an outbound
+    // WebSocket (its matchmaker server); every other page keeps the strict CSP.
+    let csp = if path == "drop.html" { CSP_DROP } else { CSP };
+
     let if_none_match = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok());
@@ -77,10 +81,10 @@ pub(super) async fn handle_static_assets(uri: Uri, headers: HeaderMap) -> Respon
             if let Ok(content) = tokio::fs::read(&disk_path).await {
                 let etag = content_etag(&content);
                 if if_none_match == Some(etag.as_str()) {
-                    return not_modified(&etag);
+                    return not_modified(&etag, csp);
                 }
                 let mime = mime_guess::from_path(&disk_path).first_or_octet_stream();
-                return ok_response(&etag, mime.as_ref(), content);
+                return ok_response(&etag, mime.as_ref(), content, csp);
             }
         }
     }
@@ -91,10 +95,10 @@ pub(super) async fn handle_static_assets(uri: Uri, headers: HeaderMap) -> Respon
     if let Some(embedded) = Asset::get(path) {
         let etag = embedded_etag(&embedded.metadata.sha256_hash());
         if if_none_match == Some(etag.as_str()) {
-            return not_modified(&etag);
+            return not_modified(&etag, csp);
         }
         let mime = mime_guess::from_path(path).first_or_octet_stream();
-        return ok_response(&etag, mime.as_ref(), embedded.data.into_owned());
+        return ok_response(&etag, mime.as_ref(), embedded.data.into_owned(), csp);
     }
 
     // 3. Not found
@@ -140,12 +144,29 @@ base-uri 'none'; \
 frame-ancestors 'none'; \
 form-action 'none'";
 
+/// Relaxed CSP for `drop.html` only. The Drop screen's tap-to-connect dials the
+/// user's own matchmaker server over an outbound WebSocket (`wss://`), which
+/// the base `connect-src 'self'` would block — the page would sit on
+/// "Connecting to matchmaker…" forever with no roster. Everything else stays
+/// locked to `'self'`; only `wss:` (the scheme the app's own URL normalizer
+/// produces) is added, and only for this one document.
+const CSP_DROP: &str = "default-src 'self'; \
+script-src 'self'; \
+style-src 'self'; \
+img-src 'self' data:; \
+connect-src 'self' wss:; \
+worker-src 'self'; \
+object-src 'none'; \
+base-uri 'none'; \
+frame-ancestors 'none'; \
+form-action 'none'";
+
 /// `200 OK` with the asset body, its `ETag`, and the standard security/caching
 /// headers. `Cache-Control: no-cache` makes the browser revalidate on every load,
 /// so a rebuilt or edited asset is picked up immediately instead of being served
 /// stale; the `ETag` keeps that cheap (an unchanged asset costs only a conditional
 /// round-trip that returns `304`).
-fn ok_response(etag: &str, mime: &str, content: Vec<u8>) -> Response {
+fn ok_response(etag: &str, mime: &str, content: Vec<u8>, csp: &str) -> Response {
     (
         [
             (header::CONTENT_TYPE, mime),
@@ -153,7 +174,7 @@ fn ok_response(etag: &str, mime: &str, content: Vec<u8>) -> Response {
             (header::ETAG, etag),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
             (header::REFERRER_POLICY, "no-referrer"),
-            (header::CONTENT_SECURITY_POLICY, CSP),
+            (header::CONTENT_SECURITY_POLICY, csp),
             (header::X_FRAME_OPTIONS, "DENY"),
         ],
         content,
@@ -163,7 +184,7 @@ fn ok_response(etag: &str, mime: &str, content: Vec<u8>) -> Response {
 
 /// `304 Not Modified` (no body) for a client whose `If-None-Match` already
 /// matches the current ETag.
-fn not_modified(etag: &str) -> Response {
+fn not_modified(etag: &str, csp: &str) -> Response {
     (
         StatusCode::NOT_MODIFIED,
         [
@@ -171,7 +192,7 @@ fn not_modified(etag: &str) -> Response {
             (header::CACHE_CONTROL, "no-cache"),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
             (header::REFERRER_POLICY, "no-referrer"),
-            (header::CONTENT_SECURITY_POLICY, CSP),
+            (header::CONTENT_SECURITY_POLICY, csp),
             (header::X_FRAME_OPTIONS, "DENY"),
         ],
     )

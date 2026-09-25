@@ -384,6 +384,7 @@ async function pumpQueue() {
 
 /* ---------- tap-to-connect: identity & storage ---------- */
 const LS_ID = 'ld_id', LS_NAME = 'ld_name', LS_SERVER = 'ld_server', LS_KNOWN = 'ld_known';
+const LS_AUTOCONN = 'ld_autoconn', LS_VIBRATE = 'ld_vibrate';
 
 function storeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* noop */ } }
@@ -478,6 +479,7 @@ function avatarLetter(name) {
 
 /* ---------- tap-to-connect: matchmaker socket ---------- */
 let myId = null, myName = '';
+let autoConn = true, vibrateOn = true; // Drop settings (persisted)
 let sig = null, sigGen = 0, sigTimer = null, hbTimer = null;
 let sigBackoff = 2000, sigWanted = false;
 let roster = [];
@@ -494,6 +496,28 @@ function sigSend(o) {
 
 function setSigDot(s) {
   $('sigDot').className = 'sigdot' + (s === 'on' ? ' on' : s === 'bad' ? ' bad' : '');
+}
+
+/* Auto-connect toggle: on -> (re)join the matchmaker now; off -> tear the
+   socket down. Manual Share/Receive code pairing always keeps working. */
+function setAutoConn(v) {
+  autoConn = !!v;
+  storeSet(LS_AUTOCONN, autoConn ? '1' : '0');
+  if (autoConn) {
+    sigConnect();
+    return;
+  }
+  sigWanted = false;
+  sigGen += 1;
+  clearTimeout(sigTimer);
+  clearInterval(hbTimer);
+  try { if (sig) sig.close(); } catch (e) { /* noop */ }
+  sig = null;
+  roster = [];
+  renderRoster();
+  renderKnown();
+  setSigDot('off');
+  showSigNotice('');
 }
 function showSigNotice(t) {
   const el = $('sigNotice');
@@ -674,6 +698,9 @@ function onRemoteSignal(from, fromName, p) {
     incomingOffer = { from, fromName, sdp: p.sdp };
     $('callTitle').textContent = fromName + ' wants to connect';
     $('callModal').classList.remove('hidden');
+    if (vibrateOn && navigator.vibrate) {
+      try { navigator.vibrate([120, 60, 120]); } catch (e) { /* noop */ }
+    }
   } else if (p.kind === 'answer') {
     if (outgoingCall && outgoingCall.id === from && pc) {
       const sdp = sdpStr(p.sdp);
@@ -768,7 +795,17 @@ function initTapToConnect() {
   $('btnAccept').addEventListener('click', acceptCall);
   $('btnDecline').addEventListener('click', declineCall);
   renderKnown();
-  sigConnect();
+  // Drop settings: restore persisted toggles, then join only if wanted.
+  autoConn = storeGet(LS_AUTOCONN) !== '0';
+  vibrateOn = storeGet(LS_VIBRATE) !== '0';
+  $('autoConnChk').checked = autoConn;
+  $('vibrateChk').checked = vibrateOn;
+  $('autoConnChk').addEventListener('change', (e) => setAutoConn(e.target.checked));
+  $('vibrateChk').addEventListener('change', (e) => {
+    vibrateOn = e.target.checked;
+    storeSet(LS_VIBRATE, vibrateOn ? '1' : '0');
+  });
+  if (autoConn) sigConnect(); else setSigDot('off');
 }
 
 /* ---------- wiring ---------- */
