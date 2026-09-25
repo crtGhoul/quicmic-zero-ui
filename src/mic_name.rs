@@ -128,7 +128,7 @@ fn rename_mic_windows(name: &str) -> anyhow::Result<String> {
     use windows::Win32::Devices::FunctionDiscovery::{
         PKEY_Device_DeviceDesc, PKEY_Device_FriendlyName,
     };
-    use windows::Win32::Foundation::E_ACCESSDENIED;
+    use windows::Win32::Foundation::{E_ACCESSDENIED, PROPERTYKEY};
     use windows::Win32::Media::Audio::{
         eCapture, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
     };
@@ -139,7 +139,7 @@ fn rename_mic_windows(name: &str) -> anyhow::Result<String> {
     use windows::Win32::System::Registry::{
         RegCloseKey, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_SET_VALUE, REG_SZ,
     };
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 
     /// Read a string property (e.g. friendly name, device description) from an
     /// endpoint's property store. Missing/unreadable values become "".
