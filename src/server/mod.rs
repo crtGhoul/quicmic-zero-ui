@@ -17,6 +17,7 @@ use tracing::info;
 
 mod api;
 mod assets;
+mod speaker;
 mod state;
 mod websocket;
 mod webtransport;
@@ -29,6 +30,7 @@ use api::{
     handle_pair, handle_renew, handle_stats, handle_update_settings,
 };
 use assets::handle_static_assets;
+use speaker::handle_speaker_ws;
 use websocket::handle_ws_upgrade;
 
 /// Audio-setting bounds shared by the REST API clamp (`POST /api/settings`) and
@@ -71,6 +73,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/stats", get(handle_stats))
         .route("/api/client-state", post(handle_client_state))
         .route("/ws", get(handle_ws_upgrade))
+        .route("/speaker-ws", get(handle_speaker_ws))
         .route("/ca", get(handle_ca_download))
         .fallback(handle_static_assets)
         .layer(middleware::from_fn(reject_cross_origin))
@@ -231,6 +234,7 @@ mod tests {
             lan_ip: "192.168.1.42".to_string(),
             pairing_throttle: Arc::new(parking_lot::Mutex::new(PairingThrottle::default())),
             update_status: Arc::new(parking_lot::Mutex::new(None)),
+            speaker_tx: None,
         }
     }
 

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Speaker — QuicMic</title>
+<meta name="description" content="Stream your PC's audio to this phone and out through your Bluetooth earbuds.">
+<meta name="theme-color" content="#050508">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Speaker">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔊</text></svg>">
+<link rel="stylesheet" href="drop.css">
+</head>
+<body>
+<div class="app">
+  <!-- Shared app nav: Mic / Drop / Speaker switcher (one app, three screens). -->
+  <nav class="appnav" aria-label="App sections">
+    <a class="appnav-link" href="index.html">🎤 Mic</a>
+    <a class="appnav-link" href="drop.html">📦 Drop</a>
+    <a class="appnav-link active" href="speaker.html" aria-current="page">🔊 Speaker</a>
+  </nav>
+  <header>
+    <div class="logo">🔊 Speaker</div>
+    <div id="status" class="status"><span class="dot"></span><span id="statusText">not connected</span></div>
+  </header>
+
+  <main class="view">
+    <h1>Hear your PC<br>through <em>your earbuds.</em></h1>
+    <p class="sub">Pair your Bluetooth earbuds to this phone, tap connect, then play anything on the PC — music, video, games.</p>
+
+    <button id="btnConnect" class="bigbtn">TAP TO<br>CONNECT</button>
+    <canvas id="meter" class="meter" width="340" height="26"></canvas>
+
+    <div class="volrow">
+      <span class="vollabel">🔈 Volume</span>
+      <input id="volSlider" type="range" min="0" max="100" value="80" aria-label="Speaker volume">
+    </div>
+    <div id="stats" class="statsline"></div>
+
+    <details class="settings">
+      <summary>⚙️ Settings</summary>
+      <label class="check"><input type="checkbox" id="autoConnChk" checked>
+        <span>Auto-connect<small>Connect on start when this phone is paired.</small></span>
+      </label>
+      <button id="btnTone" class="btn">Play local test tone</button>
+      <p class="hint">The test tone plays on this phone only (no network) — a quick way to prove your earbuds are routed before streaming.</p>
+      <p class="hint">Speaker engine: <b>48 kHz stereo · 20 ms frames</b> over an encrypted WebSocket. Runs alongside the 🎤 Mic tab — both directions at once.</p>
+    </details>
+  </main>
+</div>
+<script src="speaker.js"></script>
+</body>
+</html>

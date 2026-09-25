@@ -1,5 +1,6 @@
 mod audio;
 mod server;
+mod speaker;
 mod tls;
 mod update_check;
 
@@ -216,6 +217,12 @@ struct Cli {
     /// Disable the startup check for a newer release on GitHub.
     #[arg(long, env = "QUICMIC_NO_UPDATE_CHECK")]
     no_update_check: bool,
+
+    /// Feed the 🔊 Speaker tab a synthetic 440 Hz tone instead of capturing
+    /// system audio. Useful for testing the phone-to-earbud path on machines
+    /// without WASAPI loopback (non-Windows).
+    #[arg(long)]
+    speaker_test_tone: bool,
 }
 
 #[tokio::main]
@@ -415,6 +422,42 @@ async fn run() -> anyhow::Result<()> {
         device_ok: device_ok.clone(),
     };
 
+    // ── Speaker (PC → phone) capture ────────────────────────────────────
+    // Broadcasts 20 ms stereo PCM frames; the 🔊 Speaker tab serves them over
+    // `/speaker-ws`. Capture runs on its own thread and keeps going even with
+    // no listeners, so late joiners get audio immediately. A failed capture
+    // only disables the Speaker tab — the mic path is unaffected.
+    let speaker_tx = {
+        let (tx, _) = tokio::sync::broadcast::channel::<Vec<f32>>(64);
+        let running = if cli.speaker_test_tone {
+            speaker::synth::spawn(tx.clone());
+            info!("speaker: test-tone mode (440 Hz synthetic)");
+            true
+        } else {
+            #[cfg(windows)]
+            {
+                match speaker::wasapi::spawn(tx.clone()) {
+                    Ok(()) => {
+                        info!("speaker: WASAPI loopback capture started");
+                        true
+                    }
+                    Err(e) => {
+                        warn!("speaker: loopback failed to start: {e:#}");
+                        false
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                warn!(
+                    "speaker: system-audio capture needs Windows — re-run with --speaker-test-tone"
+                );
+                false
+            }
+        };
+        running.then_some(tx)
+    };
+
     // ── Build axum app ──────────────────────────────────────────────────
     let app_state = server::AppState {
         stream: stream_state.clone(),
@@ -424,6 +467,7 @@ async fn run() -> anyhow::Result<()> {
         lan_ip: lan_ip.to_string(),
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
         update_status,
+        speaker_tx,
     };
 
     let router = server::build_router(app_state);

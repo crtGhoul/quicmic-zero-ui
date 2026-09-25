@@ -135,6 +135,10 @@ pub struct AppState {
     /// Latest newer release tag found by the startup update check, if any. Read by
     /// `/api/info` so the web UI can show a small "update available" banner.
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
+    /// Broadcasts 20 ms stereo PCM frames from the PC's loopback capture to
+    /// `/speaker-ws` listeners. `None` when speaker capture isn't running
+    /// (non-Windows without `--speaker-test-tone`, or capture failed to start).
+    pub speaker_tx: Option<tokio::sync::broadcast::Sender<Vec<f32>>>,
 }
 
 /// Try to atomically claim the single-connection slot, retrying briefly to

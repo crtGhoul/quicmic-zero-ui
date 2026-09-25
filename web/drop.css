@@ -212,6 +212,7 @@ details.settings { margin-top: 14px; }
 details.settings summary { cursor: pointer; color: var(--mut); font-size: 14px; }
 details.settings .fld { margin-top: 10px; }
 details.settings .hint { margin-top: 10px; }
+details.settings .btn { margin-top: 12px; width: 100%; }
 .check {
   display: flex; align-items: center; gap: 10px;
   margin-top: 12px; font-size: 14px; color: var(--txt); cursor: pointer;
@@ -220,6 +221,38 @@ details.settings .hint { margin-top: 10px; }
   width: 18px; height: 18px; accent-color: var(--acc); flex: none; cursor: pointer;
 }
 .check small { display: block; color: var(--mut); font-size: 12px; margin-top: 2px; }
+
+/* speaker tab */
+.bigbtn {
+  width: min(62vw, 210px); aspect-ratio: 1; border-radius: 50%;
+  align-self: center; margin: 12px 0 4px;
+  border: 2px solid var(--acc); background: var(--card); color: var(--acc);
+  font-size: 17px; font-weight: 800; font-family: inherit; cursor: pointer;
+  box-shadow: 0 0 24px rgba(0, 229, 255, .22), inset 0 0 24px rgba(0, 229, 255, .07);
+  transition: transform .12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.bigbtn:active { transform: scale(.96); }
+.bigbtn.live {
+  background: rgba(0, 229, 255, .14); color: #fff;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.bigbtn .btnsub { font-size: 11px; font-weight: 600; opacity: .7; }
+@keyframes pulse {
+  50% { box-shadow: 0 0 44px rgba(0, 229, 255, .5), inset 0 0 24px rgba(0, 229, 255, .2); }
+}
+.meter {
+  width: 100%; max-width: 340px; height: 26px; margin: 16px auto 0;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg1);
+  display: block;
+}
+.volrow { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.vollabel { font-size: 14px; color: var(--mut); flex: none; }
+.volrow input[type="range"] { flex: 1; accent-color: var(--acc); height: 32px; }
+.statsline {
+  margin-top: 8px; font-size: 12px; color: var(--mut);
+  text-align: center; min-height: 1.4em;
+}
 
 /* incoming call modal */
 .modal {
@@ -243,7 +276,7 @@ details.settings .hint { margin-top: 10px; }
 .mrow .btn { flex: 1; }
 .mrow .btn.primary { margin-top: 0; }
 
-/* Shared app nav: Mic / Drop switcher (one app, two screens). */
+/* Shared app nav: Mic / Drop switcher (one app, three screens). */
 .appnav {
   position: sticky;
   top: 0;
