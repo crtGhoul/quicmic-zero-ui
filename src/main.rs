@@ -1,10 +1,13 @@
 mod audio;
 mod console;
+mod identity;
 mod mic_name;
 mod self_update;
 mod server;
 mod speaker;
 mod tls;
+#[cfg(windows)]
+mod tray;
 mod update_check;
 
 use std::net::{IpAddr, SocketAddr};
@@ -172,9 +175,18 @@ struct Cli {
     #[arg(long)]
     ip: Option<String>,
 
-    /// Set a custom 6-digit pairing PIN (auto-generated if omitted).
+    /// Set a custom 6-digit pairing PIN. The PIN is remembered across restarts
+    /// (that is what makes phone auto-connect work); this flag overrides the
+    /// remembered PIN and becomes the new remembered one.
     #[arg(long)]
     pin: Option<String>,
+
+    /// Directory for the persistent server identity (pairing PIN + TLS
+    /// certificate). Defaults to the platform app-data directory. Keeping the
+    /// same identity across restarts is what lets an already-paired phone
+    /// reconnect automatically instead of needing a fresh QR scan.
+    #[arg(long, env = "QUICMIC_DATA_DIR")]
+    data_dir: Option<String>,
 
     /// Dump TLS certificates to the certs/ directory for debugging.
     #[arg(long)]
@@ -248,6 +260,15 @@ struct Cli {
     /// Renaming needs one elevated run; the name sticks afterwards.
     #[arg(long, value_name = "MODE|NAME")]
     rename_mic: Option<String>,
+
+    /// Run as a Windows system-tray app instead of a console window: when
+    /// double-clicked the console is hidden and a tray icon takes its place
+    /// (status line, "Show connection QR", Quit); when launched from a
+    /// terminal the console stays and the tray runs alongside it. The console
+    /// dashboard itself is unchanged. Windows only — on other platforms this
+    /// prints a note and the app runs in console mode as usual.
+    #[arg(long)]
+    tray: bool,
 }
 
 #[tokio::main]
@@ -282,6 +303,13 @@ async fn run() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    #[cfg(not(windows))]
+    if cli.tray {
+        // Tray mode needs the Windows shell notification area; everywhere else
+        // the console dashboard is the app, so just say so and carry on.
+        eprintln!("Note: --tray is Windows-only; continuing in console mode.");
+    }
 
     let theme = console::Theme::parse(&cli.theme).unwrap_or_else(|| {
         eprintln!(
@@ -397,28 +425,47 @@ async fn run() -> anyhow::Result<()> {
         );
     }
 
-    // ── Generate TLS identity ───────────────────────────────────────────
-    let (wt_identity, identity) = tls::generate_identity(lan_ip, cli.dump_certs)?;
-
-    // ── Generate pairing PIN ────────────────────────────────────────────
-    let pin = match cli.pin {
-        Some(pin) => {
-            if pin.len() != 6 || !pin.bytes().all(|b| b.is_ascii_digit()) {
-                anyhow::bail!("--pin must be exactly 6 digits (0-9)");
-            }
-            pin
+    // ── Server identity: persistent PIN + TLS certificate ───────────────
+    // The identity is what makes auto-connect possible: as long as the same
+    // certificate and PIN are served, an already-paired phone reconnects
+    // without a fresh QR scan or certificate accept. A `--pin` override is
+    // validated here, then remembered by the identity store.
+    if let Some(ref p) = cli.pin {
+        if p.len() != 6 || !p.bytes().all(|b| b.is_ascii_digit()) {
+            anyhow::bail!("--pin must be exactly 6 digits (0-9)");
         }
-        None => format!("{:06}", rand::random_range(0..1_000_000u32)),
-    };
+    }
+    let data_dir = identity::data_dir(cli.data_dir.as_deref());
+    let (wt_identity, identity, pin, identity_fresh) =
+        identity::load_or_create(&data_dir, lan_ip, cli.dump_certs, cli.pin.clone())?;
+    // Shared, mutable PIN: the API validates against it and the `newpin`
+    // console command rotates it live.
+    let pin_shared = std::sync::Arc::new(parking_lot::Mutex::new(pin));
+    if identity_fresh {
+        info!(
+            dir = %data_dir.display(),
+            "New server identity created — pair from the QR code below."
+        );
+    } else {
+        info!(
+            dir = %data_dir.display(),
+            "Loaded saved server identity — already-paired phones reconnect automatically."
+        );
+    }
 
     // ── Print startup banner ────────────────────────────────────────────
     let url = format!("https://{}:{}", url_host(&lan_ip), cli.port);
     let theme_lock: Arc<parking_lot::Mutex<console::Theme>> =
         Arc::new(parking_lot::Mutex::new(theme));
-    console::print_banner(&theme_lock, &url, &pin, &identity.cert_hash_base64);
+    console::print_banner(
+        &theme_lock,
+        &url,
+        &pin_shared.lock(),
+        &identity.cert_hash_base64,
+    );
 
     // Print QR code for easy mobile pairing (URL includes PIN as hash fragment)
-    let qr_url = format!("{}#{}", url, pin);
+    let qr_url = format!("{}#{}", url, pin_shared.lock());
     if let Err(e) = qr2term::print_qr(&qr_url) {
         info!("Could not print QR code: {}", e);
     }
@@ -428,6 +475,38 @@ async fn run() -> anyhow::Result<()> {
         console::LOCALDROP_URL
     );
     println!();
+
+    // ── Tray mode (Windows) ─────────────────────────────────────────────
+    // The icon and its menu-event channel are kept alive for the whole run.
+    // On other platforms --tray is a no-op (noted above) and this stays None.
+    #[cfg(windows)]
+    let mut tray: Option<(
+        tray::TrayApp,
+        tokio::sync::mpsc::UnboundedReceiver<tray::TrayAction>,
+    )> = if cli.tray {
+        if launched_by_double_click() {
+            // The console was created just for us — hide it so the app feels
+            // like a real Windows app. Launched from a terminal, the user's
+            // console is left alone and the tray runs alongside it.
+            tray::hide_own_console();
+        }
+        let status = format!("QuicMic — {}:{}", url_host(&lan_ip), cli.port);
+        // The pairing-QR page: use the LAN IP (bracketed for IPv6) because the
+        // self-signed certificate's SAN covers the LAN IP, not 127.0.0.1.
+        let tray_qr_url = format!("https://{}:{}/qr", url_host(&lan_ip), cli.port);
+        match tray::spawn(&status, &tray_qr_url) {
+            Ok((app, rx)) => {
+                info!("tray mode: running as a system-tray app");
+                Some((app, rx))
+            }
+            Err(e) => {
+                warn!("tray mode failed ({e:#}); continuing in console mode");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Background, opt-out check for a newer release. Never blocks startup and stays
     // silent unless a strictly newer version is found.
@@ -564,7 +643,7 @@ async fn run() -> anyhow::Result<()> {
     let app_state = server::AppState {
         stream: stream_state.clone(),
         tls_identity: identity.clone(),
-        pairing_pin: pin.clone(),
+        pairing_pin: pin_shared.clone(),
         wt_port: cli.port,
         lan_ip: lan_ip.to_string(),
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
@@ -609,7 +688,8 @@ async fn run() -> anyhow::Result<()> {
     let ctx = console::Ctx {
         theme: theme_lock.clone(),
         url: url.clone(),
-        pin: pin.clone(),
+        pin: pin_shared.clone(),
+        data_dir: data_dir.clone(),
         cert_hash: identity.cert_hash_base64.clone(),
         device_select: device_select.clone(),
         stream: stream_state.clone(),
@@ -650,6 +730,33 @@ async fn run() -> anyhow::Result<()> {
             _ = tokio::signal::ctrl_c() => {
                 graceful_shutdown(&stream_state, &axum_handle).await;
                 break;
+            }
+            // --tray (Windows): "Quit" in the tray menu runs the same graceful
+            // shutdown as Ctrl+C. select! branches can't carry #[cfg], so the
+            // Windows-only work lives inside the cfg'd block and this branch
+            // just pends forever on other platforms (or when tray mode is off).
+            tray_quit = async {
+                #[cfg(windows)]
+                {
+                    if let Some((_app, rx)) = tray.as_mut() {
+                        loop {
+                            match rx.recv().await {
+                                // "Show connection QR" is handled inside the
+                                // tray module (opens the browser); keep
+                                // listening for the next click.
+                                Some(tray::TrayAction::ShowQr) => {}
+                                Some(tray::TrayAction::Quit) => return true,
+                                None => return false,
+                            }
+                        }
+                    }
+                }
+                std::future::pending::<bool>().await
+            } => {
+                if tray_quit {
+                    graceful_shutdown(&stream_state, &axum_handle).await;
+                    break;
+                }
             }
             // `/api/update` staged a new exe: shut down so the updater batch
             // can swap the file and restart it.
@@ -693,9 +800,9 @@ async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Shared graceful-shutdown sequence, used by Ctrl+C and the `quit` console
-/// command. See the F5-handover / disconnect-detection notes in AGENTS.md for
-/// why the 503-then-wait order matters.
+/// Shared graceful-shutdown sequence, used by Ctrl+C, the `quit` console
+/// command, and the tray menu's Quit item. See the F5-handover / disconnect-detection
+/// notes in AGENTS.md for why the 503-then-wait order matters.
 async fn graceful_shutdown(
     stream_state: &server::StreamState,
     axum_handle: &axum_server::Handle<SocketAddr>,

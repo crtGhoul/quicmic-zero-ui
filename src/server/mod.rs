@@ -17,6 +17,7 @@ use tracing::info;
 
 mod api;
 mod assets;
+mod qr;
 mod speaker;
 mod state;
 mod websocket;
@@ -30,6 +31,7 @@ use api::{
     handle_pair, handle_renew, handle_stats, handle_update, handle_update_settings,
 };
 use assets::handle_static_assets;
+use qr::handle_qr;
 use speaker::handle_speaker_ws;
 use websocket::handle_ws_upgrade;
 
@@ -76,6 +78,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/ws", get(handle_ws_upgrade))
         .route("/speaker-ws", get(handle_speaker_ws))
         .route("/ca", get(handle_ca_download))
+        // /qr: pairing-QR page for --tray mode's "Show connection QR" menu
+        // item. Registered before the fallback so /qr.css, /qr.js and
+        // /qrcode.min.js resolve to the static assets below.
+        .route("/qr", get(handle_qr))
         .fallback(handle_static_assets)
         .layer(middleware::from_fn(reject_cross_origin))
         .layer(middleware::from_fn_with_state(
@@ -230,9 +236,10 @@ mod tests {
                 cert_pem: String::new(),
                 key_pem: String::new(),
                 cert_der: vec![1, 2, 3],
+                key_der: vec![],
                 cert_hash_base64: "TESTHASH".to_string(),
             },
-            pairing_pin: "123456".to_string(),
+            pairing_pin: Arc::new(parking_lot::Mutex::new("123456".to_string())),
             wt_port: 8443,
             lan_ip: "192.168.1.42".to_string(),
             pairing_throttle: Arc::new(parking_lot::Mutex::new(PairingThrottle::default())),
@@ -427,6 +434,29 @@ mod tests {
             LATENCY_THRESHOLD_MAX_MS as u64
         );
         assert_eq!(json["noise_gate"].as_f64().unwrap(), NOISE_GATE_MAX as f64);
+    }
+
+    #[tokio::test]
+    async fn qr_page_embeds_pairing_url() {
+        let resp = build_router(test_state())
+            .oneshot(get("/qr"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        // The server injects the LAN IP, port, and PIN into the page so the QR
+        // renders with no inline script (strict CSP stays intact).
+        assert!(body.contains("https://192.168.1.42:8443#123456"));
+        assert!(body.contains("/qrcode.min.js"));
+        assert!(body.contains("/qr.js"));
+        assert!(body.contains("/qr.css"));
     }
 
     #[tokio::test]

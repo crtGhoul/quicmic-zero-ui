@@ -102,6 +102,18 @@ windows = { version = "0.61", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_System_Registry",
 ] }
+# System-tray icon for `--tray` mode (Windows only): menu with a status line,
+# a "Show connection QR" item and Quit. Pure-Rust, no native build deps.
+tray-icon = "0.25"
+# Opens the connection-QR page in the default browser from the tray menu.
+# Windows-only use; kept out of the shared deps so other platforms are untouched.
+open = "5"
+
+[build-dependencies]
+# Decodes web/icons/icon-192.png to raw RGBA at build time for the tray icon.
+# Pure Rust (miniz_oxide via fdeflate) — no C compiler or system libraries, so
+# Linux/macOS builds gain no system dependencies from it.
+png = "0.18"
 
 [dev-dependencies]
 # `tower`'s `util` feature provides `ServiceExt::oneshot`, used to drive the axum

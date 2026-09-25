@@ -8,10 +8,10 @@
 //! console change can be overridden the next time the phone pairs. The console
 //! is for the PC operator; the phone UI is for the phone user.
 
+use parking_lot::Mutex;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-
-use parking_lot::Mutex;
 use tokio::sync::broadcast;
 
 use crate::audio;
@@ -154,7 +154,10 @@ fn visible_cols(s: &str) -> usize {
 pub struct Ctx {
     pub theme: Arc<parking_lot::Mutex<Theme>>,
     pub url: String,
-    pub pin: String,
+    /// Shared with the API's pairing check: the `newpin` command rotates it live.
+    pub pin: Arc<parking_lot::Mutex<String>>,
+    /// Data dir holding the persisted server identity (for `newpin`).
+    pub data_dir: PathBuf,
     pub cert_hash: String,
     pub device_select: Arc<parking_lot::Mutex<Option<String>>>,
     pub stream: StreamState,
@@ -438,6 +441,10 @@ pub fn print_help(ctx: &Ctx) {
     let cmds: &[(&str, &str)] = &[
         ("status", "show the live status panel"),
         ("qr", "reprint the pairing QR code"),
+        (
+            "newpin",
+            "rotate the pairing PIN now (paired phones must pair again)",
+        ),
         ("drop", "LocalDrop link for phone↔PC file sharing"),
         ("devices", "list audio output devices"),
         ("device <n|name>", "switch the mic output device live"),
@@ -492,9 +499,30 @@ pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
         "help" | "?" | "commands" => print_help(ctx),
         "status" => print_status(ctx),
         "qr" => {
-            let qr_url = format!("{}#{}", ctx.url, ctx.pin);
+            let qr_url = format!("{}#{}", ctx.url, ctx.pin.lock());
             if let Err(e) = qr2term::print_qr(&qr_url) {
                 println!("Could not print QR code: {e}");
+            }
+        }
+        "newpin" => {
+            // Rotate the pairing PIN live: persisted for auto-connect, and the
+            // API validates against the same shared lock, so it takes effect
+            // immediately. The old session token is revoked at the same time —
+            // the phone sees a 401 and shows "Session expired. Please pair
+            // again.", so a rotated PIN truly locks out previously paired phones.
+            let new_pin = format!("{:06}", rand::random_range(0..1_000_000u32));
+            match crate::identity::save_pin(&ctx.data_dir, &new_pin) {
+                Ok(()) => {
+                    *ctx.pin.lock() = new_pin.clone();
+                    *ctx.stream.session_token.lock() = None;
+                    println!("New pairing PIN: {new_pin}");
+                    let qr_url = format!("{}#{}", ctx.url, new_pin);
+                    if let Err(e) = qr2term::print_qr(&qr_url) {
+                        println!("Could not print QR code: {e}");
+                    }
+                    println!("Previously paired phones must pair again with the new PIN.");
+                }
+                Err(e) => println!("Could not save new PIN: {e:#}"),
             }
         }
         "devices" => {
@@ -571,7 +599,7 @@ pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
             Some(t) => {
                 *ctx.theme.lock() = t;
                 println!("Theme set to '{}'.", t.name());
-                print_banner(&ctx.theme, &ctx.url, &ctx.pin, &ctx.cert_hash);
+                print_banner(&ctx.theme, &ctx.url, &ctx.pin.lock(), &ctx.cert_hash);
             }
             None => println!("Usage: theme <ghoul|neon|plain>"),
         },

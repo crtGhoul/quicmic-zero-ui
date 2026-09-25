@@ -133,7 +133,10 @@ fn embedded_etag(sha256: &[u8; 32]) -> String {
 /// (all styling lives in `style.css`), so `style-src` stays `'self'` with no
 /// `'unsafe-inline'`. Any injected external resource (script, frame, connection) is
 /// blocked.
-const CSP: &str = "default-src 'self'; \
+///
+/// Also used by the `/qr` pairing page, which loads the same self-contained
+/// assets (`qrcode.min.js`, `qr.js`, `qr.css`) and no inline code.
+pub(super) const CSP: &str = "default-src 'self'; \
 script-src 'self'; \
 style-src 'self'; \
 img-src 'self' data:; \
