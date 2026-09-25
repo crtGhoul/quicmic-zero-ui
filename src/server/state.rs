@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::audio::RingBuffer;
+use crate::mic_name::MicRenameMode;
 use crate::tls::TlsIdentity;
 
 /// State shared between both transport handlers and the HTTP API.
@@ -149,6 +150,16 @@ pub struct AppState {
     /// exe, so the updater batch can swap and restart. Buffered (1) so the
     /// handler never blocks on a main loop that's already exiting.
     pub shutdown_tx: tokio::sync::mpsc::Sender<()>,
+    /// The phone's self-reported device name from the last pairing (`None`
+    /// until the first pair). Shown in the console status panel and used for
+    /// automatic mic renames.
+    pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
+    /// How the capture endpoint's display name is managed (`--rename-mic`).
+    pub mic_rename_mode: MicRenameMode,
+    /// The endpoint name this server actually applied (`None` when it never
+    /// renamed anything). Reported to the phone so its UI can show what apps
+    /// like Discord will list as the mic input.
+    pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
 }
 
 /// Try to atomically claim the single-connection slot, retrying briefly to

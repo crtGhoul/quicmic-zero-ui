@@ -42,10 +42,16 @@
                 QuicMic
                 <span>Wireless Microphone</span>
             </div>
+            <div id="qr-badge" class="qr-badge" hidden>&#10003; PIN filled in from QR code</div>
+            <div id="pair-target" class="pair-target" hidden>Pairing with <b id="pair-host"></b></div>
             <input type="tel" id="pin-input" class="pin-input" maxlength="6" inputmode="numeric" pattern="[0-9]{6}"
                 required placeholder="&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="off" aria-label="6-digit pairing PIN">
             <button id="pair-btn" class="btn btn-primary btn-big">Connect</button>
-            <div class="pair-sub">The 6-digit PIN is shown in your computer&apos;s QuicMic window.</div>
+            <ol class="pair-steps">
+                <li>Open the QuicMic window on your computer</li>
+                <li>Scan the QR code, or type the 6-digit PIN</li>
+                <li>Tap Connect &mdash; your phone becomes the PC mic</li>
+            </ol>
         </div>
 
         <div id="server-lost" class="server-lost" role="alert" hidden>
@@ -104,6 +110,16 @@
 
             <div class="settings-group">
                 <div class="settings-group-title">Phone</div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Device name</span>
+                    </div>
+                    <input type="text" id="device-name-input" class="text-input" maxlength="32"
+                        autocomplete="off" aria-label="Device name shown on the PC">
+                    <div class="setting-hint">The name your PC shows for this phone &mdash; and what Discord lists
+                        as the mic input when auto-rename is on. Takes effect on next pairing.</div>
+                </div>
 
                 <div class="setting-row">
                     <div class="setting-label">
@@ -227,6 +243,10 @@
             <div class="settings-group">
                 <div class="settings-group-title">Diagnostics</div>
                 <div class="stats">
+                    <div class="stat">
+                        <span class="stat-label">Mic name</span>
+                        <span id="stat-micname" class="stat-value">&mdash;</span>
+                    </div>
                     <div class="stat">
                         <span class="stat-label">Transport</span>
                         <span id="stat-transport" class="stat-value transport">&mdash;</span>

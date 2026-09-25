@@ -30,6 +30,10 @@ pub(super) struct ServerInfo {
 #[derive(Deserialize)]
 pub(super) struct PairRequest {
     pin: String,
+    /// The phone's self-reported device name (e.g. "iPhone", "Pixel 8").
+    /// Optional for backward compatibility; sent by newer phone UIs.
+    #[serde(default)]
+    device_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -38,6 +42,10 @@ pub(super) struct PairResponse {
     token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// What apps (Discord etc.) list as the mic input, when this server
+    /// manages the endpoint name. `None` when the name wasn't changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mic_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +57,9 @@ pub(super) struct RenewRequest {
 pub(super) struct RenewResponse {
     success: bool,
     token: Option<String>,
+    /// What apps list as the mic input, when the server manages the name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mic_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -157,6 +168,7 @@ pub(super) async fn handle_pair(
                     success: false,
                     token: None,
                     error: Some(format!("Too many attempts. Try again in {}s.", remaining)),
+                    mic_name: None,
                 }),
             )
                 .into_response();
@@ -177,6 +189,7 @@ pub(super) async fn handle_pair(
                 success: false,
                 token: None,
                 error: Some("Incorrect PIN".to_string()),
+                mic_name: None,
             })
             .into_response();
         }
@@ -191,14 +204,52 @@ pub(super) async fn handle_pair(
         *guard = Some(token.clone());
     }
 
-    info!(peer = %ip, "Phone paired successfully");
+    // Remember the phone's self-reported device name, and in Auto rename mode
+    // rename the capture endpoint to it — so apps list the phone (e.g.
+    // "iPhone") instead of "CABLE Output". The rename is synchronous Windows
+    // registry/COM work with no `.await` inside, and no lock is held across it.
+    let device_name = body
+        .device_name
+        .as_deref()
+        .map(sanitize_device_name)
+        .filter(|s| !s.is_empty());
+    if let Some(ref name) = device_name {
+        *state.phone_device_name.lock() = Some(name.clone());
+    }
+    if let Some(ref name) = device_name {
+        if state.mic_rename_mode == crate::mic_name::MicRenameMode::Auto {
+            match crate::mic_name::rename_mic(Some(name)) {
+                Ok(applied) => {
+                    info!(applied = %applied, "Mic endpoint auto-renamed to phone name");
+                    *state.applied_mic_name.lock() = Some(applied);
+                }
+                Err(e) => warn!("Auto mic rename failed: {e:#}"),
+            }
+        }
+    }
+
+    match &device_name {
+        Some(name) => info!(peer = %ip, device_name = %name, "Phone paired successfully"),
+        None => info!(peer = %ip, "Phone paired successfully"),
+    }
 
     Json(PairResponse {
         success: true,
         token: Some(token),
         error: None,
+        mic_name: state.applied_mic_name.lock().clone(),
     })
     .into_response()
+}
+
+/// Clean up a phone-reported device name: trim whitespace, drop control
+/// characters, cap at 64 chars. An empty result means "no usable name".
+fn sanitize_device_name(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(64)
+        .collect()
 }
 
 /// POST /api/renew — Validate existing token and issue a new one.
@@ -229,11 +280,13 @@ pub(super) async fn handle_renew(
         Json(RenewResponse {
             success: true,
             token: Some(token),
+            mic_name: state.applied_mic_name.lock().clone(),
         })
     } else {
         Json(RenewResponse {
             success: false,
             token: None,
+            mic_name: None,
         })
     }
 }
@@ -527,4 +580,21 @@ pub(super) async fn handle_ca_download(State(state): State<AppState>) -> impl In
     );
 
     (headers, state.tls_identity.cert_der.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_device_name;
+
+    #[test]
+    fn sanitize_trims_and_caps_device_name() {
+        assert_eq!(sanitize_device_name("  iPhone  "), "iPhone");
+        assert_eq!(sanitize_device_name(""), "");
+        assert_eq!(sanitize_device_name("   "), "");
+        // Control characters are dropped.
+        assert_eq!(sanitize_device_name("a\x00b\x1fc"), "abc");
+        // Capped at 64 chars.
+        let long = "x".repeat(100);
+        assert_eq!(sanitize_device_name(&long).len(), 64);
+    }
 }

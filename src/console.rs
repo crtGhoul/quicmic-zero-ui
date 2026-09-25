@@ -176,6 +176,12 @@ pub struct Ctx {
     #[cfg_attr(not(windows), allow(dead_code))]
     pub speaker_generation: Arc<AtomicU64>,
     pub monitor_present: bool,
+    /// The phone's self-reported device name from the last pairing.
+    pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
+    /// How the capture endpoint's display name is managed.
+    pub mic_rename_mode: crate::mic_name::MicRenameMode,
+    /// The endpoint name this server actually applied (if any).
+    pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
 }
 
 /// What the command loop should do after a command.
@@ -344,6 +350,21 @@ pub fn print_status(ctx: &Ctx) {
         Some(ip) => panel.row(&format!("{} Mic client:  {}{}", dot(true), p.value, ip)),
         None => panel.row(&format!("{} Mic client:  {}--", dot(false), p.dim)),
     }
+    if let Some(name) = ctx.phone_device_name.lock().clone() {
+        panel.row(&format!("{} Phone name:  {}{}", p.label, p.value, name));
+    }
+    if let Some(applied) = ctx.applied_mic_name.lock().clone() {
+        panel.row(&format!(
+            "{} Discord sees: {}{} (mic input name)",
+            p.label, p.value, applied
+        ));
+    }
+    panel.row(&format!(
+        "{} Mic rename mode: {}{}",
+        p.label,
+        p.value,
+        ctx.mic_rename_mode.label()
+    ));
     if speaker_peers.is_empty() {
         let state = if ctx.speaker_running.load(Ordering::Relaxed) {
             "idle"
@@ -430,7 +451,7 @@ pub fn print_help(ctx: &Ctx) {
         ),
         (
             "mic-name [name]",
-            "rename the phone-mic input (CABLE Output → QuicMic)",
+            "rename the phone-mic input (CABLE Output → QuicMic); auto-renames to the phone's name on pairing unless --rename-mic off",
         ),
         ("volume <0-5>", "PC output volume multiplier"),
         ("gain <0.2-3>", "mic gain multiplier"),
@@ -490,7 +511,7 @@ pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
         }
         "speaker-devices" => cmd_speaker_devices(),
         "speaker-device" => cmd_speaker_device(ctx, &arg),
-        "mic-name" => cmd_mic_name(&arg),
+        "mic-name" => cmd_mic_name(ctx, &arg),
         "volume" => cmd_set_f32(
             "volume",
             &arg,
@@ -623,8 +644,10 @@ fn cmd_device(ctx: &Ctx, arg: &str) {
 
 /// `mic-name [name]`: rename the VB-Cable recording endpoint (the "microphone"
 /// your apps see) so it shows up as "QuicMic" instead of "CABLE Output".
+/// A manual one-shot: with the default `--rename-mic auto` the next phone
+/// pairing renames it again to the phone's device name.
 /// Windows only; needs one elevated run (the name lives in HKLM).
-fn cmd_mic_name(arg: &str) {
+fn cmd_mic_name(ctx: &Ctx, arg: &str) {
     let wanted = if arg.trim().is_empty() {
         None
     } else {
@@ -632,6 +655,7 @@ fn cmd_mic_name(arg: &str) {
     };
     match crate::mic_name::rename_mic(wanted) {
         Ok(name) => {
+            *ctx.applied_mic_name.lock() = Some(name.clone());
             println!("Mic input renamed to \"{name}\".");
             println!("Restart your apps (Discord, Serein, …) and they'll list it as \"{name}\".");
         }

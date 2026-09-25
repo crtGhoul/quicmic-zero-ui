@@ -6,7 +6,9 @@
 //! 960 samples/channel * 2 channels * 4 bytes = 7680 bytes, little-endian f32,
 //! interleaved stereo. No headers, no negotiation.
 
+#[cfg(any(windows, test))]
 pub mod format;
+#[cfg(any(windows, test))]
 pub mod resample;
 pub mod synth;
 #[cfg(windows)]
@@ -24,6 +26,8 @@ pub const FRAME_BYTES: usize = FRAME_SAMPLES * CHANNELS * 4;
 /// case-insensitive substring match on the friendly name.
 /// Pure string logic — shared by the `--speaker-device` flag and the
 /// `speaker-device` console command, and unit-tested here.
+/// Windows-only in production (WASAPI enumeration); compiled for tests everywhere.
+#[cfg(any(windows, test))]
 pub fn resolve_index(names: &[String], sel: &str) -> Option<usize> {
     if let Ok(i) = sel.parse::<usize>() {
         return names.get(i).map(|_| i);
@@ -37,6 +41,8 @@ pub fn resolve_index(names: &[String], sel: &str) -> Option<usize> {
 /// Validate a `speaker-device` argument against the enumerated render
 /// endpoints. Returns the canonical friendly name to store in the selection
 /// (`None` = follow the system default render endpoint).
+/// Windows-only in production (WASAPI enumeration); compiled for tests everywhere.
+#[cfg(any(windows, test))]
 pub fn resolve_name(names: &[String], arg: &str) -> Result<Option<String>, String> {
     if arg.eq_ignore_ascii_case("default") {
         return Ok(None);

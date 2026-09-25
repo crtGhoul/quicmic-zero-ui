@@ -41,6 +41,9 @@ let isConnecting = false;    // A transport connect attempt is in progress.
 let isStarting = false;      // startStreaming() is running (renew + mic + transport).
 let transportType = 'none';
 let wtFallbackNotified = false;  // One-time WebSocket-fallback warning per stream.
+// What the PC's apps (Discord etc.) list as the mic input, as reported by the
+// server's pair response (`null` when the server didn't rename the endpoint).
+let serverMicName = null;
 let isPowerSaveActive = false;
 let lastVuUpdateTime = 0;
 let wakeLock = null;         // Screen Wake Lock sentinel (held during Eco Mode).
@@ -80,6 +83,9 @@ const pairScreen = document.getElementById('pair-screen');
 const mainScreen = document.getElementById('main-screen');
 const pinInput = document.getElementById('pin-input');
 const pairBtn = document.getElementById('pair-btn');
+const qrBadge = document.getElementById('qr-badge');
+const pairTarget = document.getElementById('pair-target');
+const pairHost = document.getElementById('pair-host');
 const serverLost = document.getElementById('server-lost');
 const reloadBtn = document.getElementById('reload-btn');
 const micBtn = document.getElementById('mic-btn');
@@ -91,6 +97,8 @@ const statusText = document.getElementById('status-text');
 const vuBar = document.getElementById('vu-bar');
 const vuLevel = document.getElementById('vu-level');
 const statTransport = document.getElementById('stat-transport');
+const statMicName = document.getElementById('stat-micname');
+const deviceNameInput = document.getElementById('device-name-input');
 const statPing = document.getElementById('stat-ping');
 const statBuffer = document.getElementById('stat-buffer');
 const statPackets = document.getElementById('stat-packets');
@@ -299,6 +307,7 @@ async function init() {
 
     // Load saved settings from localStorage
     loadSettings();
+    initDeviceName();
 
     // Update stats display every second
     setInterval(updateStats, 1000);
@@ -310,6 +319,10 @@ async function init() {
         localStorage.removeItem('sessionToken');
         sessionToken = null;
         pinInput.value = hash;
+        // Show where this QR code points, and that the PIN came from the scan.
+        qrBadge.hidden = false;
+        pairHost.textContent = location.host;
+        pairTarget.hidden = false;
         // Clean up the hash so it doesn't show in the URL
         history.replaceState(null, '', location.pathname);
         // Auto-pair after a short delay (to let UI render)
@@ -893,9 +906,52 @@ async function renewToken() {
     if (result.success && result.token) {
         sessionToken = result.token;
         localStorage.setItem('sessionToken', sessionToken);
+        if (result.mic_name) serverMicName = result.mic_name;
         return true;
     }
     return false;
+}
+
+// ── Device Name ─────────────────────────────────────────────────────
+// The name this phone reports to the PC at pairing. The server shows it in
+// its console and (with the default --rename-mic auto) renames the mic
+// endpoint to it, so apps like Discord list the phone's name.
+
+/** Best-effort device name from the user agent (iPhone, Pixel 8, …). */
+function defaultDeviceName() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone/i.test(ua)) return 'iPhone';
+    if (/iPad/i.test(ua)) return 'iPad';
+    if (/Android/i.test(ua)) {
+        const m = ua.match(/Android[^;]*;\s*([^;)]+)/);
+        if (m && m[1]) return m[1].trim().slice(0, 32);
+        return 'Android';
+    }
+    if (/Windows/i.test(ua)) return 'Windows PC';
+    if (/Macintosh|Mac OS X/i.test(ua)) return 'Mac';
+    return 'Phone';
+}
+
+/** The currently configured device name (input value, falling back to default). */
+function currentDeviceName() {
+    const v = (deviceNameInput.value || '').trim();
+    return v || defaultDeviceName();
+}
+
+/** Populate the settings field from the saved value (or the UA default) and
+    persist edits. */
+function initDeviceName() {
+    deviceNameInput.value = localStorage.getItem('quicmic_device_name') || defaultDeviceName();
+    deviceNameInput.placeholder = defaultDeviceName();
+    deviceNameInput.addEventListener('change', () => {
+        const v = deviceNameInput.value.trim();
+        if (v) {
+            localStorage.setItem('quicmic_device_name', v);
+        } else {
+            localStorage.removeItem('quicmic_device_name');
+            deviceNameInput.value = defaultDeviceName();
+        }
+    });
 }
 
 async function doPair() {
@@ -915,7 +971,7 @@ async function doPair() {
         const resp = await fetchWithTimeout('/api/pair', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin }),
+            body: JSON.stringify({ pin, device_name: currentDeviceName() }),
         });
 
         const result = await resp.json();
@@ -923,6 +979,9 @@ async function doPair() {
         if (result.success) {
             sessionToken = result.token;
             localStorage.setItem('sessionToken', sessionToken);
+            // What the PC's apps will list as the mic input (if the server
+            // renamed the endpoint) — shown in Diagnostics.
+            serverMicName = result.mic_name || null;
             pairScreen.classList.remove('active');
             mainScreen.classList.add('active');
             maybeShowCoach();
@@ -1601,13 +1660,26 @@ async function connectTransport() {
     // The actual sample rate the browser settled on (may differ from 48kHz).
     const actualSampleRate = audioContext ? audioContext.sampleRate : 48000;
 
+    // Remember the last working transport: on networks where UDP is blocked,
+    // skipping the doomed WebTransport attempt makes reconnects instant.
+    // Anything else (including a first run) tries WebTransport first.
+    const preferred = localStorage.getItem('quicmic_transport');
+    const wtAvailable = 'WebTransport' in window;
+
     // While connecting, close events are resolved by this function's own
     // success/failure path rather than by `onTransportClosed`, so a failed
     // attempt never spuriously triggers the reconnect machinery.
     isConnecting = true;
     try {
+        if (preferred === 'WebSocket' || !wtAvailable) {
+            // Last time WebSocket is what worked (or no WebTransport support):
+            // go straight to the reliable TCP fallback.
+            await connectWebSocket(actualSampleRate);
+            return;
+        }
+
         // Try WebTransport first (low-latency UDP/QUIC).
-        if ('WebTransport' in window) {
+        if (wtAvailable) {
             try {
                 await connectWebTransport(actualSampleRate);
                 return;
@@ -1672,6 +1744,7 @@ async function connectWebTransport(sampleRate) {
         : datagramStream.writable;
     datagramWriter = writable.getWriter();
     transportType = 'WebTransport';
+    try { localStorage.setItem('quicmic_transport', 'WebTransport'); } catch (e) {}
     console.log('[transport] connected via WebTransport (QUIC/UDP)');
 }
 
@@ -1692,6 +1765,7 @@ async function connectWebSocket(sampleRate) {
         ws.onopen = () => {
             clearTimeout(timeoutId);
             transportType = 'WebSocket';
+            try { localStorage.setItem('quicmic_transport', 'WebSocket'); } catch (e) {}
             console.log('[transport] connected via WebSocket (TCP — fallback)');
             // If the browser supports WebTransport yet we still landed on WebSocket,
             // the low-latency UDP/QUIC path failed. On a LAN the overwhelming cause is
@@ -1913,6 +1987,7 @@ function updateStats() {
     ecoHealthTicks = 0;
 
     statTransport.textContent = transportType;
+    statMicName.textContent = serverMicName || '—';
     statPackets.textContent = packetsSent.toLocaleString();
 
     if (isStreaming && startTime > 0) {

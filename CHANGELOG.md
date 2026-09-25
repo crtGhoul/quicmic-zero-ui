@@ -8,8 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Hear-yourself monitor: `--monitor-device [NAME]` starts a second supervised audio stream that plays your mic audio through a physical PC output device (host default, or substring match like `--device`), fed by its own ring buffer so the SPSC contract stays intact. Mute/unmute at runtime via `POST /api/monitor` or the toggle on the phone's settings panel. Warns about speaker feedback (headphones recommended).
-- PC-side output volume: `--volume` and a new "Output Volume" slider on the phone's settings panel, backed by `POST/GET /api/settings` (`output_volume`, clamped 0.0–5.0). Applied in the output stage after resampling, so it scales both the virtual-device and monitor streams.
+- Hear-yourself monitoring: `monitor <on|off>` console command and `--monitor-device` flag play the incoming mic audio back through a PC output device (wear headphones to avoid feedback); the phone settings drawer has a monitor toggle when enabled.
+- PC-side output volume: swipe up/down on the phone's Mic screen adjusts the PC output volume with a HUD readout, and `status` shows the current volume.
+- Phone device name: the Mic screen's settings now have a **Device name** field (pre-filled from the phone type, editable). The phone reports it at pairing (`device_name` in the pair request), the PC console shows it in `status`, and the phone's Diagnostics section shows what apps list as the mic input.
+- Automatic mic endpoint rename on pairing: `--rename-mic auto` (default on Windows, `off` elsewhere) renames the virtual-cable capture endpoint to the paired phone's device name, so Discord/Windows list "iPhone" instead of "CABLE Output (VB-Audio Virtual Cable)". `--rename-mic off` disables it; `--rename-mic "NAME"` uses one fixed name. The applied name is reported back in the pair and renew responses. One elevated run is needed (the name lives in HKLM); it sticks afterwards.
+- Repeat-safe endpoint matching: the rename now matches on friendly name *or* the driver-set device description, so it keeps finding the endpoint after a previous rename changed its friendly name.
+- Pairing screen improvements: "✓ PIN filled in from QR code" badge when the PIN came from a scan, "Pairing with \<host\>" line, and numbered setup steps.
+- Transport memory: the phone remembers which connection type worked last (WebTransport UDP vs WebSocket TCP) and tries it first, so reconnects on UDP-blocked networks skip the doomed WebTransport attempt.
 
 ## [0.2.4] - 2026-09-19
 

@@ -23,7 +23,7 @@ The window is interactive — type a command and press Enter while it runs:
 - `device <n|name>` — switch the mic output device live, no restart
 - `speaker-devices` — list PC playback devices the Speaker tab can capture from
 - `speaker-device <n|name>` — switch which device the Speaker tab captures, live (headphones vs Bluetooth vs speakers…)
-- `mic-name [name]` — rename the phone-mic input your apps see: turns "CABLE Output (VB-Audio Virtual Cable)" into "QuicMic" (or your own name) in Discord/Serein/Windows mic pickers. Needs one run as administrator; the name sticks afterwards.
+- `mic-name [name]` — rename the phone-mic input your apps see: turns "CABLE Output (VB-Audio Virtual Cable)" into "QuicMic" (or your own name) in Discord/Serein/Windows mic pickers. Needs one run as administrator; the name sticks afterwards. (With the default `--rename-mic auto`, the next phone pairing renames it again to the phone's device name.)
 - `volume <0-5>` / `gain <0.2-3>` / `gate <-100-0>` / `latency <0-500>` — DSP settings, applied immediately
 - `monitor <on|off>` — mute the hear-yourself monitor
 - `theme <neon|ghoul|plain>` — switch the banner theme live
@@ -62,6 +62,18 @@ Switch between the three screens from the top nav on any page.
 | 🎤 Mic | 📦 Drop | 🔊 Speaker |
 |---|---|---|
 | ![Mic tab](docs/screenshots/phone-mic.png) | ![Drop tab](docs/screenshots/phone-drop.png) | ![Speaker tab](docs/screenshots/phone-speaker.png) |
+
+### Your phone's name in Discord
+
+The Mic screen's settings have a **Device name** field (pre-filled from your phone, editable). When a phone pairs, the PC renames its mic input to that name — so Discord, Windows, and other apps list **"iPhone"** (or whatever you set) instead of "CABLE Output (VB-Audio Virtual Cable)". The Diagnostics section shows the current mic name, and the PC console's `status` panel shows it too.
+
+This is on by default on Windows (`--rename-mic auto`). Alternatives:
+
+- `quicmic.exe --rename-mic off` — never rename automatically
+- `quicmic.exe --rename-mic "Studio Mic"` — always use one fixed name
+- `mic-name [name]` in the console — rename once, right now
+
+Renaming needs one run as administrator (the name lives in the system registry); it sticks afterwards. The phone also remembers which connection type worked last (WebTransport UDP vs WebSocket TCP) and tries it first, so reconnects skip the doomed attempt on networks where UDP is blocked.
 
 ### Install as an app (PWA)
 

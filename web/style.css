@@ -219,6 +219,65 @@ body {
     color: var(--text-dim);
 }
 
+/* "PIN filled in from QR code" badge, shown when the URL hash carried a PIN. */
+.qr-badge {
+    display: inline-block;
+    margin: 10px 0 2px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    background: rgba(52, 199, 89, 0.14);
+    border: 1px solid rgba(52, 199, 89, 0.45);
+    color: #34c759;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.qr-badge[hidden] {
+    display: none;
+}
+
+/* "Pairing with <host>" line under the badge. */
+.pair-target {
+    margin: 8px 0 2px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.pair-target b {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.pair-target[hidden] {
+    display: none;
+}
+
+/* Numbered pairing steps under the Connect button. */
+.pair-steps {
+    margin: 22px 0 0;
+    padding: 0 0 0 22px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: var(--text-dim);
+    text-align: left;
+}
+
+/* Free-text settings input (device name). */
+.text-input {
+    width: 100%;
+    background: #17171f;
+    color: var(--text);
+    border: 1px solid #26262f;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 15px;
+    outline: none;
+}
+
+.text-input:focus {
+    border-color: var(--accent-dim);
+}
+
 .server-lost {
     margin-top: 26px;
     width: 100%;

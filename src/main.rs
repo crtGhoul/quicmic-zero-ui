@@ -238,6 +238,16 @@ struct Cli {
     /// (retro hacker green), or plain (no colors). Switchable live via `theme`.
     #[arg(long, default_value = "neon")]
     theme: String,
+
+    /// Rename the phone-mic capture endpoint so apps list it under a
+    /// recognizable name instead of "CABLE Output (VB-Audio Virtual Cable)".
+    /// `auto` renames to the paired phone's device name on every pairing
+    /// (the default on Windows); `off` disables automatic renames; any other
+    /// value renames once at startup to that fixed name. The `mic-name`
+    /// console command still works as a manual one-shot in any mode.
+    /// Renaming needs one elevated run; the name sticks afterwards.
+    #[arg(long, value_name = "MODE|NAME")]
+    rename_mic: Option<String>,
 }
 
 #[tokio::main]
@@ -532,6 +542,25 @@ async fn run() -> anyhow::Result<()> {
     // Lets /api/update ask the main task to shut down after staging a new
     // exe, so the updater batch can swap and restart.
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
+    // Resolve the mic endpoint naming policy. A fixed `--rename-mic "NAME"`
+    // is applied once here at startup; `auto` renames on every phone pairing
+    // (see the pair handler). Needs elevation on Windows; the name sticks
+    // afterwards, so one admin run is enough.
+    let mic_rename_mode = mic_name::parse_rename_mic(cli.rename_mic.as_deref());
+    let applied_mic_name = match &mic_rename_mode {
+        mic_name::MicRenameMode::Fixed(name) => match mic_name::rename_mic(Some(name)) {
+            Ok(applied) => {
+                info!(applied = %applied, "Mic endpoint renamed (fixed --rename-mic)");
+                Some(applied)
+            }
+            Err(e) => {
+                warn!("--rename-mic failed: {e:#}");
+                None
+            }
+        },
+        _ => None,
+    };
+
     let app_state = server::AppState {
         stream: stream_state.clone(),
         tls_identity: identity.clone(),
@@ -542,7 +571,15 @@ async fn run() -> anyhow::Result<()> {
         update_status,
         speaker_tx: speaker_tx.clone(),
         shutdown_tx,
+        phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
+        mic_rename_mode: mic_rename_mode.clone(),
+        applied_mic_name: Arc::new(parking_lot::Mutex::new(applied_mic_name)),
     };
+
+    // Clone the console-visible state before `app_state` moves into the router.
+    let phone_device_name = app_state.phone_device_name.clone();
+    let mic_rename_mode = app_state.mic_rename_mode.clone();
+    let applied_mic_name = app_state.applied_mic_name.clone();
 
     let router = server::build_router(app_state);
     let tls_config = tls::build_rustls_config_async(&identity).await?;
@@ -582,6 +619,9 @@ async fn run() -> anyhow::Result<()> {
         speaker_device: speaker_device.clone(),
         speaker_generation: speaker_generation.clone(),
         monitor_present,
+        phone_device_name,
+        mic_rename_mode,
+        applied_mic_name,
     };
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     std::thread::Builder::new()

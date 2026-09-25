@@ -343,6 +343,8 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 /// `.new` file over the exe, relaunches the exe with its original arguments,
 /// then deletes itself. If the swap fails, the old exe is relaunched instead
 /// and a marker file is left in %TEMP% — you're never left with nothing.
+/// Windows-only in production (batch staging); compiled for tests everywhere.
+#[cfg(any(windows, test))]
 pub fn updater_script(pid: u32, exe: &Path, new_exe: &Path, args: &[String]) -> String {
     let quoted_args = args
         .iter()

@@ -241,6 +241,9 @@ mod tests {
             // Test receiver is dropped immediately, so a handler's send would
             // fail — but no test exercises the shutdown path.
             shutdown_tx: tokio::sync::mpsc::channel::<()>(1).0,
+            phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
+            mic_rename_mode: crate::mic_name::MicRenameMode::Off,
+            applied_mic_name: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
@@ -314,6 +317,23 @@ mod tests {
         let json = body_json(resp).await;
         assert_eq!(json["success"], true);
         assert!(json["token"].is_string());
+    }
+
+    #[tokio::test]
+    async fn pair_accepts_device_name_and_reports_mic_name() {
+        let app = build_router(test_state());
+        let resp = app
+            .oneshot(post(
+                "/api/pair",
+                json!({ "pin": "123456", "device_name": "iPhone" }),
+            ))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert_eq!(json["success"], true);
+        // Test state uses MicRenameMode::Off, so nothing is renamed and the
+        // response carries no mic_name.
+        assert!(json.get("mic_name").is_none());
     }
 
     #[tokio::test]
