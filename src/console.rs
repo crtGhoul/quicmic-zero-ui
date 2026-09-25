@@ -428,6 +428,10 @@ pub fn print_help(ctx: &Ctx) {
             "speaker-device <n|name>",
             "switch which device the Speaker tab captures",
         ),
+        (
+            "mic-name [name]",
+            "rename the phone-mic input (CABLE Output → QuicMic)",
+        ),
         ("volume <0-5>", "PC output volume multiplier"),
         ("gain <0.2-3>", "mic gain multiplier"),
         ("gate <-100-0>", "noise-gate threshold in dB (-100 = off)"),
@@ -486,6 +490,7 @@ pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
         }
         "speaker-devices" => cmd_speaker_devices(),
         "speaker-device" => cmd_speaker_device(ctx, &arg),
+        "mic-name" => cmd_mic_name(&arg),
         "volume" => cmd_set_f32(
             "volume",
             &arg,
@@ -614,6 +619,24 @@ fn cmd_device(ctx: &Ctx, arg: &str) {
         "Switching mic output to {}…",
         pick.as_deref().unwrap_or("system default")
     );
+}
+
+/// `mic-name [name]`: rename the VB-Cable recording endpoint (the "microphone"
+/// your apps see) so it shows up as "QuicMic" instead of "CABLE Output".
+/// Windows only; needs one elevated run (the name lives in HKLM).
+fn cmd_mic_name(arg: &str) {
+    let wanted = if arg.trim().is_empty() {
+        None
+    } else {
+        Some(arg.trim())
+    };
+    match crate::mic_name::rename_mic(wanted) {
+        Ok(name) => {
+            println!("Mic input renamed to \"{name}\".");
+            println!("Restart your apps (Discord, Serein, …) and they'll list it as \"{name}\".");
+        }
+        Err(e) => println!("{e:#}"),
+    }
 }
 
 /// `speaker-devices`: list the PC playback endpoints the 🔊 Speaker tab can

@@ -1,5 +1,6 @@
 mod audio;
 mod console;
+mod mic_name;
 mod self_update;
 mod server;
 mod speaker;

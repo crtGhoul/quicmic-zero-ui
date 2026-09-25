@@ -23,6 +23,7 @@ The window is interactive — type a command and press Enter while it runs:
 - `device <n|name>` — switch the mic output device live, no restart
 - `speaker-devices` — list PC playback devices the Speaker tab can capture from
 - `speaker-device <n|name>` — switch which device the Speaker tab captures, live (headphones vs Bluetooth vs speakers…)
+- `mic-name [name]` — rename the phone-mic input your apps see: turns "CABLE Output (VB-Audio Virtual Cable)" into "QuicMic" (or your own name) in Discord/Serein/Windows mic pickers. Needs one run as administrator; the name sticks afterwards.
 - `volume <0-5>` / `gain <0.2-3>` / `gate <-100-0>` / `latency <0-500>` — DSP settings, applied immediately
 - `monitor <on|off>` — mute the hear-yourself monitor
 - `theme <neon|ghoul|plain>` — switch the banner theme live
