@@ -39,34 +39,53 @@ use super::resample::Converter;
 /// equals the value it started with — the device-switch path bumps it, waits
 /// a beat, then calls `spawn` again with the new selection.
 ///
-/// Opening the endpoint and validating the mix format happen synchronously
-/// here (not inside the thread), so a bad device or an unsupported format
-/// returns `Err` to the caller: the Speaker tab is then disabled with the real
-/// reason instead of accepting phone clients onto a stream that can never
-/// produce audio.
+/// The endpoint is opened and the mix format validated on the capture thread,
+/// but the outcome is relayed back through a rendezvous channel that `spawn`
+/// blocks on: a bad device or an unsupported format still returns `Err` to the
+/// caller, so the Speaker tab is disabled with the real reason instead of
+/// accepting phone clients onto a stream that can never produce audio.
+/// Keeping the COM interfaces on the single thread that created them also
+/// avoids `Send` issues (`windows` interface types are not `Send`).
 pub fn spawn(
     tx: broadcast::Sender<Vec<f32>>,
     device: Option<String>,
     generation: Arc<AtomicU64>,
 ) -> anyhow::Result<()> {
-    let cap = start_capture(device.as_deref())?;
     let my_generation = generation.load(Ordering::Relaxed);
+    // Rendezvous: the capture thread opens and validates the endpoint, then
+    // reports the outcome through this channel before entering the pump loop.
+    // `spawn` blocks on it (bounded by a timeout) so a bad device or an
+    // unsupported mix format returns `Err` here, synchronously: the Speaker
+    // tab is then disabled with the real reason instead of accepting phone
+    // clients onto a stream that can never produce audio.
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<anyhow::Result<()>>();
     std::thread::Builder::new()
         .name("wasapi-loopback".into())
         .spawn(move || {
-            // MTA on this thread too: it drives the capture client opened above.
+            // MTA: this thread opens and drives the capture client, so the COM
+            // interfaces never cross a thread boundary (they are not `Send`).
             unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok() };
-            if let Err(e) = pump(tx, cap, my_generation, &generation) {
-                error!("loopback capture failed: {e:#}");
+            match start_capture(device.as_deref()) {
+                Ok(cap) => {
+                    let _ = ready_tx.send(Ok(()));
+                    if let Err(e) = pump(tx, cap, my_generation, &generation) {
+                        error!("loopback capture failed: {e:#}");
+                    }
+                }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(anyhow::anyhow!("{e:#}")));
+                }
             }
         })
         .map_err(|e| anyhow::anyhow!("spawn capture thread: {e}"))?;
-    Ok(())
+    ready_rx
+        .recv_timeout(std::time::Duration::from_secs(15))
+        .map_err(|_| anyhow::anyhow!("capture thread died during startup"))?
 }
 
-/// An opened, started loopback stream, handed from the synchronous startup
-/// phase to the background pump thread. `device`/`client` are kept alive for
-/// the stream's whole lifetime, exactly as before the split.
+/// An opened, started loopback stream. Created and driven on the capture
+/// thread (see [`spawn`]): the COM interfaces never cross a thread boundary.
+/// `device`/`client` are kept alive for the stream's whole lifetime.
 struct Capture {
     name: String,
     #[allow(dead_code)]
@@ -80,7 +99,8 @@ struct Capture {
 }
 
 /// Open the chosen render endpoint in loopback mode, validate its mix format,
-/// and start the capture stream. Synchronous so [`spawn`] fails fast.
+/// and start the capture stream. Runs on the capture thread; [`spawn`]
+/// relays the result back so startup still fails fast.
 fn start_capture(wanted: Option<&str>) -> anyhow::Result<Capture> {
     unsafe {
         let (dev_name, device) = open_render_device(wanted)?;
