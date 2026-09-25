@@ -106,6 +106,8 @@ windows = { version = "0.61", features = [
 # `tower`'s `util` feature provides `ServiceExt::oneshot`, used to drive the axum
 # router in-process for the HTTP API tests (no real socket or audio device).
 tower = { version = "0.5", features = ["util"] }
+# Ad-hoc temp files for unit tests (token file parsing, …).
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

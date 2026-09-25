@@ -15,6 +15,7 @@ use parking_lot::Mutex;
 use tokio::sync::broadcast;
 
 use crate::audio;
+use crate::self_update;
 use crate::server::{self, StreamState};
 #[cfg(windows)]
 use crate::speaker;
@@ -433,6 +434,10 @@ pub fn print_help(ctx: &Ctx) {
         ("latency <0-500>", "latency-recovery threshold in ms"),
         ("monitor <on|off>", "hear-yourself monitor mute"),
         ("theme <ghoul|neon|plain>", "banner theme"),
+        (
+            "update",
+            "download the latest release exe and restart into it",
+        ),
         ("quit", "graceful shutdown"),
     ];
     for (cmd, desc) in cmds {
@@ -450,7 +455,7 @@ pub fn print_help(ctx: &Ctx) {
 }
 
 /// Parse and run one console command line.
-pub fn handle_command(line: &str, ctx: &Ctx) -> Action {
+pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
     let mut parts = line.split_whitespace();
     let cmd = match parts.next() {
         Some(c) => c.to_ascii_lowercase(),
@@ -544,6 +549,15 @@ pub fn handle_command(line: &str, ctx: &Ctx) -> Action {
             }
             None => println!("Usage: theme <ghoul|neon|plain>"),
         },
+        "update" => {
+            // Self-updater: downloads the latest release's exe and restarts
+            // into it, so you don't have to fetch it from GitHub by hand.
+            match self_update::run_update().await {
+                Ok(true) => return Action::Quit, // updater batch takes over
+                Ok(false) => {}
+                Err(e) => println!("Update failed: {e:#}"),
+            }
+        }
         "quit" | "exit" => return Action::Quit,
         _ => println!("Unknown command '{cmd}'. Type 'help' for the list."),
     }

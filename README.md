@@ -26,7 +26,27 @@ The window is interactive — type a command and press Enter while it runs:
 - `volume <0-5>` / `gain <0.2-3>` / `gate <-100-0>` / `latency <0-500>` — DSP settings, applied immediately
 - `monitor <on|off>` — mute the hear-yourself monitor
 - `theme <neon|ghoul|plain>` — switch the banner theme live
+- `update` — check the private repo's latest release and, if newer, download the exe and restart into it (no manual re-download)
 - `quit` — graceful shutdown (same as Ctrl+C)
+
+### Updating
+
+Typing `update` in the console installs the newest release in place: it
+downloads the `.exe` from the private release, waits for this window to close,
+swaps the file, and reopens it — you get the new version without touching
+GitHub yourself.
+
+Because the repo is private, the updater needs a GitHub token with **read-only**
+access to `crtGhoul/quicmic-zero-ui`. Create one here (fine-grained,
+repository access → only `quicmic-zero-ui`, permissions → none needed beyond
+the default read of repo contents):
+
+https://github.com/settings/personal-access-tokens/new
+
+Then either set the `QUICMIC_GITHUB_TOKEN` environment variable, or save the
+token as the first line of a file named `github_token.txt` next to the exe.
+The token is only ever sent to `api.github.com` — never to download mirrors —
+and it is never written to any log.
 
 The phone UI stays the source of truth for saved settings — it can reapply volume/gain/gate/latency when it reconnects. You can also pick the theme at startup: `quicmic.exe --theme ghoul`. The speaker capture device is selectable at startup too: `quicmic.exe --speaker-device headphones`.
 

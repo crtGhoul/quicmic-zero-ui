@@ -48,7 +48,7 @@ pub async fn latest_if_newer() -> Option<String> {
 
 /// Parse `v1.2.3` / `1.2.3` (ignoring any `-pre` / `+build` suffix) into a
 /// comparable tuple. Returns `None` for anything that isn't three numeric parts.
-fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
     let core = s.trim().trim_start_matches('v');
     let core = core.split(['-', '+']).next().unwrap_or(core);
     let mut parts = core.split('.');
@@ -61,24 +61,7 @@ fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
 /// Fetch the latest release tag by reading the `Location` header of the
 /// `releases/latest` redirect. No response body is parsed.
 async fn fetch_latest_tag() -> anyhow::Result<String> {
-    // Client TLS using the OS trust store — GitHub serves a publicly-trusted cert,
-    // unlike our own self-signed LAN cert. The crypto provider is the process
-    // default installed in `run` (ring).
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().certs {
-        let _ = roots.add(cert);
-    }
-    if roots.is_empty() {
-        anyhow::bail!("no OS root certificates available");
-    }
-    let config = rustls::ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    let connector = TlsConnector::from(Arc::new(config));
-
-    let tcp = TcpStream::connect("github.com:443").await?;
-    let domain = rustls::pki_types::ServerName::try_from("github.com")?;
-    let mut tls = connector.connect(domain, tcp).await?;
+    let mut tls = tls_connect("github.com").await?;
 
     let request = format!(
         "GET /{REPO}/releases/latest HTTP/1.1\r\n\
@@ -130,6 +113,30 @@ async fn fetch_latest_tag() -> anyhow::Result<String> {
 /// Index of the first occurrence of `needle` within `haystack`.
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+pub(crate) type TlsStream = tokio_rustls::client::TlsStream<TcpStream>;
+
+/// Open a TLS connection to `host:443` using the OS trust store.
+/// Client TLS with the process-default crypto provider (`ring`, installed in
+/// `run`) — GitHub serves a publicly-trusted cert, unlike our own self-signed
+/// LAN cert. Shared by the startup check and the self-updater.
+pub(crate) async fn tls_connect(host: &str) -> anyhow::Result<TlsStream> {
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().certs {
+        let _ = roots.add(cert);
+    }
+    if roots.is_empty() {
+        anyhow::bail!("no OS root certificates available");
+    }
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let connector = TlsConnector::from(Arc::new(config));
+
+    let tcp = TcpStream::connect(format!("{host}:443")).await?;
+    let domain = rustls::pki_types::ServerName::try_from(host)?.to_owned();
+    Ok(connector.connect(domain, tcp).await?)
 }
 
 #[cfg(test)]

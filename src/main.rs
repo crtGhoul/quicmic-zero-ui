@@ -1,5 +1,6 @@
 mod audio;
 mod console;
+mod self_update;
 mod server;
 mod speaker;
 mod tls;
@@ -614,7 +615,7 @@ async fn run() -> anyhow::Result<()> {
             } => {
                 match cmd {
                     Some(line) => {
-                        if console::handle_command(&line, &ctx) == console::Action::Quit {
+                        if console::handle_command(&line, &ctx).await == console::Action::Quit {
                             graceful_shutdown(&stream_state, &axum_handle).await;
                             break;
                         }
