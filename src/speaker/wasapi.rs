@@ -62,9 +62,8 @@ pub fn spawn(
     std::thread::Builder::new()
         .name("wasapi-loopback".into())
         .spawn(move || {
-            // MTA: this thread opens and drives the capture client, so the COM
-            // interfaces never cross a thread boundary (they are not `Send`).
-            unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok() };
+            // Note: `start_capture` initializes COM (MTA) itself via
+            // `open_render_device`; everything COM stays on this thread.
             match start_capture(device.as_deref()) {
                 Ok(cap) => {
                     let _ = ready_tx.send(Ok(()));
