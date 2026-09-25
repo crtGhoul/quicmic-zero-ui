@@ -965,3 +965,37 @@ body {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* ── Shared app nav: Mic / Drop switcher (one app, two screens) ──────────
+   Sits above the pair and main screens. Links keep native behaviour — the
+   Zero-UI gesture handler already ignores taps on <a> elements. */
+.appnav {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+    background: rgba(5, 5, 8, 0.88);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid #1a1a24;
+}
+
+.appnav-link {
+    padding: 7px 20px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+
+.appnav-link.active {
+    color: var(--accent);
+    background: var(--accent-faint);
+    border-color: var(--accent-dim);
+}

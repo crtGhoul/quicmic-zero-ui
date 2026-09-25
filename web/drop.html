@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Drop — QuicMic</title>
+<meta name="description" content="Send photos, files, text messages and links between nearby devices. No signup, no server, peer-to-peer.">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Drop">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<link rel="stylesheet" href="drop.css">
+<script src="qrcode.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <!-- Shared app nav: Mic / Drop switcher (one app, two screens). -->
+  <nav class="appnav" aria-label="App sections">
+    <a class="appnav-link" href="index.html">🎤 Mic</a>
+    <a class="appnav-link active" href="drop.html" aria-current="page">📦 Drop</a>
+  </nav>
+  <header>
+    <div class="logo">📦 Drop</div>
+    <div id="status" class="status idle"><span class="dot"></span><span id="statusText">not connected</span></div>
+  </header>
+
+  <!-- HOME -->
+  <main id="view-home" class="view">
+    <h1>Send anything<br>to devices <em>near you.</em></h1>
+    <p class="sub">Photos, files, text &amp; links — straight over your local network. No account, no cloud, no app install.</p>
+    <div class="cards">
+      <button class="card" id="btnHost">
+        <span class="card-icon">📤</span>
+        <span class="card-title">Share</span>
+        <span class="card-desc">Host a session &amp; get a code</span>
+      </button>
+      <button class="card" id="btnJoin">
+        <span class="card-icon">📥</span>
+        <span class="card-title">Receive</span>
+        <span class="card-desc">Join with a code</span>
+      </button>
+    </div>
+
+    <!-- TAP-TO-CONNECT -->
+    <section class="panel" id="tapPanel">
+      <div class="rowline">
+        <label class="fld"><span>This device</span>
+          <input id="nameInput" type="text" maxlength="24" autocomplete="off" placeholder="Naming…">
+        </label>
+        <span id="sigDot" class="sigdot" title="matchmaker status"></span>
+      </div>
+      <h3>Nearby &amp; ready</h3>
+      <p id="sigNotice" class="hint hidden"></p>
+      <div id="rosterList" class="devlist"></div>
+      <div id="callState" class="hidden"></div>
+      <h3>Known devices</h3>
+      <div id="knownList" class="devlist"></div>
+      <details class="settings">
+        <summary>⚙️ Matchmaker server</summary>
+        <label class="fld"><span>Server URL</span>
+          <input id="serverInput" type="url" inputmode="url" autocomplete="off"
+                 placeholder="wss://your-server.onrender.com">
+        </label>
+        <p class="hint">No server yet? Deploy your own free one — see
+          <b>Tap-to-connect server</b> in the LocalDrop README, then paste the URL here.
+          Without a server you can still use Share / Receive codes below.</p>
+        <p class="hint">Drop engine: <b id="appVersion">v7</b></p>
+      </details>
+    </section>
+
+    <p class="hint">🔒 Peer-to-peer &amp; encrypted (WebRTC). Open this page on both devices — phones, tablets &amp; computers on the same Wi-Fi.</p>
+  </main>
+
+  <!-- HOST -->
+  <main id="view-host" class="view hidden">
+    <button class="back" data-go="home">← back</button>
+    <h2>Share</h2>
+    <div class="step"><span class="n">1</span><p>Have the other device scan or copy your code:</p></div>
+    <div id="qr" class="qr"></div>
+    <div class="codeRow">
+      <textarea id="hostCode" readonly rows="3" placeholder="generating…"></textarea>
+      <button id="copyHost" class="btn small">Copy</button>
+    </div>
+    <div class="step"><span class="n">2</span><p>Paste their reply code here:</p></div>
+    <textarea id="hostAnswer" rows="3" placeholder="Paste reply code…"></textarea>
+    <button id="btnConnect" class="btn primary">Connect</button>
+  </main>
+
+  <!-- JOIN -->
+  <main id="view-join" class="view hidden">
+    <button class="back" data-go="home">← back</button>
+    <h2>Receive</h2>
+    <div class="step"><span class="n">1</span><p>Paste the sharer's code:</p></div>
+    <textarea id="joinCode" rows="3" placeholder="Paste share code…"></textarea>
+    <button id="btnMakeReply" class="btn primary">Create my reply code</button>
+    <div id="replyWrap" class="hidden">
+      <div class="step"><span class="n">2</span><p>Give this reply code back to the sharer:</p></div>
+      <div class="codeRow">
+        <textarea id="joinReply" readonly rows="3"></textarea>
+        <button id="copyJoin" class="btn small">Copy</button>
+      </div>
+      <p class="hint">Waiting for them to paste it and connect…</p>
+    </div>
+  </main>
+
+  <!-- CHAT -->
+  <main id="view-chat" class="view hidden">
+    <button class="back" data-go="home">⏻ disconnect</button>
+    <div id="messages" class="messages"></div>
+    <div class="composer">
+      <label class="attach" title="Send photo or file">📎<input type="file" id="fileInput" hidden multiple></label>
+      <input id="textInput" type="text" placeholder="Message, link…" autocomplete="off" enterkeyhint="send">
+      <button id="btnSend" class="btn primary">Send</button>
+    </div>
+  </main>
+
+  <!-- INCOMING CALL -->
+  <div id="callModal" class="modal hidden">
+    <div class="sheet">
+      <div class="ringicon">📞</div>
+      <h2 id="callTitle">Incoming connection</h2>
+      <p class="hint" id="callSub">They'll be able to send you files, photos and messages.</p>
+      <div class="mrow">
+        <button id="btnAccept" class="btn primary">Accept</button>
+        <button id="btnDecline" class="btn">Decline</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="drop.js"></script>
+</body>
+</html>
