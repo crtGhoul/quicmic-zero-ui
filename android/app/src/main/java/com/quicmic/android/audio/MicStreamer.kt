@@ -371,7 +371,7 @@ class MicStreamer(private val store: SecureStore) {
                 if (accPos == SAMPLES_PER_PACKET) {
                     accPos = 0
                     for (frame in processPacket(acc)) {
-                        if (!ws.send(ByteString.of(frame))) {
+                        if (!ws.send(ByteString.of(*frame))) {
                             throw IOException("websocket send failed")
                         }
                     }

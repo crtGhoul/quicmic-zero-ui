@@ -47,8 +47,7 @@ fun openWebSocket(client: OkHttpClient, url: String): ManagedSocket {
     val latch = CountDownLatch(1)
     val dead = AtomicBoolean(false)
     val opened = AtomicBoolean(false)
-    @Volatile
-    var failure: Throwable? = null
+    val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
 
     val listener = object : WebSocketListener() {
         override fun onOpen(ws: WebSocket, response: Response) {
@@ -68,12 +67,12 @@ fun openWebSocket(client: OkHttpClient, url: String): ManagedSocket {
             if (opened.get()) {
                 dead.set(true)
             } else {
-                failure = when (response?.code) {
+                failure.set(when (response?.code) {
                     401 -> SessionExpiredException("server rejected the token (401)")
                     409 -> IOException("another client is already connected (409)")
                     503 -> IOException("service unavailable (503)")
                     else -> IOException("websocket failed: ${t.message} (http=${response?.code})")
-                }
+                })
                 latch.countDown()
             }
         }
@@ -88,6 +87,6 @@ fun openWebSocket(client: OkHttpClient, url: String): ManagedSocket {
         }
         throw IOException("websocket open timed out: $url")
     }
-    failure?.let { throw it }
+    failure.get()?.let { throw it }
     return ManagedSocket(ws, dead)
 }
