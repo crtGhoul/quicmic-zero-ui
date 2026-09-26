@@ -22,8 +22,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::update_check;
 
 /// `owner/repo` whose releases carry the exe. Private, so the API calls below
-/// need the token — which is also why the plain startup update check (public
-/// upstream repo, no auth) can't cover it.
+/// need the token — the unauthenticated startup check in
+/// [`crate::update_check`] targets the same repo but can only stay silent
+/// without auth; it never reports a version on its own.
 const PRIVATE_REPO: &str = "crtGhoul/quicmic-zero-ui";
 
 /// Overall budgets so a wedged network can never hang the console forever.
@@ -73,6 +74,16 @@ pub(crate) fn token_from_file(path: &Path) -> Option<String> {
 /// version was staged and the caller should quit so the updater batch can
 /// swap the exe and restart it.
 pub async fn run_update() -> anyhow::Result<bool> {
+    // Platform gate first: self-update only exists for the Windows exe, so on
+    // other platforms bail before any network work instead of downloading an
+    // exe we would only discard. (`cfg!` rather than `#[cfg]` so the rest of
+    // the function still compiles — and stays dead-code-warning-free — on
+    // every platform.)
+    if !cfg!(windows) {
+        println!("Self-update is only wired up for the Windows exe.");
+        return Ok(false);
+    }
+
     let token = github_token().ok_or_else(|| {
         anyhow::anyhow!(
             "No GitHub token found.\n\
@@ -122,10 +133,11 @@ pub async fn run_update() -> anyhow::Result<bool> {
         println!("Update staged — restarting into the new version…");
         Ok(true)
     }
+    // Non-Windows never reaches here (the `cfg!` gate above returned), but the
+    // arm must exist so the function typechecks on every platform.
     #[cfg(not(windows))]
     {
         let _ = dest;
-        println!("Self-update is only wired up for the Windows exe.");
         Ok(false)
     }
 }
@@ -162,22 +174,37 @@ async fn latest_release(token: &str) -> anyhow::Result<ReleaseInfo> {
     let (asset_name, asset_api_url) = v
         .get("assets")
         .and_then(|a| a.as_array())
-        .and_then(|assets| {
-            assets.iter().find_map(|a| {
-                let name = a.get("name")?.as_str()?;
-                if !name.ends_with(".exe") {
-                    return None;
-                }
-                let url = a.get("url")?.as_str()?.to_string();
-                Some((name.to_string(), url))
-            })
-        })
+        .and_then(|assets| pick_exe_asset(assets))
         .ok_or_else(|| anyhow::anyhow!("latest release has no .exe asset"))?;
     Ok(ReleaseInfo {
         tag,
         asset_name,
         asset_api_url,
     })
+}
+
+/// Pick the release asset to install: the first whose name ends exactly in
+/// `.exe`. Pure, so it is unit-testable. Returns `(name, api_url)`.
+///
+/// A release with no bare `.exe` asset (only a `.zip`, for example) yields
+/// `None` — the caller reports that clearly instead of downloading the wrong
+/// file. A name like `quicmic.exe.zip` does not qualify.
+fn pick_exe_asset(assets: &[serde_json::Value]) -> Option<(String, String)> {
+    assets.iter().find_map(|a| {
+        let name = a.get("name")?.as_str()?;
+        if !name.ends_with(".exe") {
+            return None;
+        }
+        let url = a.get("url")?.as_str()?.to_string();
+        Some((name.to_string(), url))
+    })
+}
+
+/// Cheap integrity gate for a downloaded Windows executable: every PE starts
+/// with the `MZ` magic. Catches truncated downloads and mis-served error pages
+/// (an HTML 404 body saved as the "exe") before they can be staged.
+fn looks_like_pe(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == b'M' && bytes[1] == b'Z'
 }
 
 /// Download an asset API URL, following redirects (the API 302s to a signed
@@ -196,6 +223,15 @@ async fn download_asset(api_url: &str, token: &str, dest: &Path) -> anyhow::Resu
         match resp.status {
             200 => {
                 let body = decode_body(&resp)?;
+                // Never stage something that isn't an executable: a truncated
+                // download or a mis-served error page must fail here, loudly,
+                // rather than replace the working exe with garbage.
+                if !looks_like_pe(&body) {
+                    anyhow::bail!(
+                        "downloaded asset is not a Windows executable ({} bytes, no MZ header) — not staging it",
+                        body.len()
+                    );
+                }
                 std::fs::write(dest, &body)?;
                 return Ok(body.len() as u64);
             }
@@ -325,9 +361,11 @@ fn dechunk(mut body: &[u8]) -> anyhow::Result<Vec<u8>> {
         }
         out.extend_from_slice(&body[..size]);
         body = &body[size..];
-        // Trailing CRLF after each chunk.
+        // Trailing CRLF after each chunk. Fewer than 2 bytes left means the
+        // stream ended mid-body — fail loudly rather than returning a silently
+        // truncated payload.
         if body.len() < 2 {
-            break;
+            anyhow::bail!("truncated chunked body");
         }
         body = &body[2..];
     }
@@ -449,6 +487,59 @@ mod tests {
         assert_eq!(h, "api.github.com");
         assert_eq!(p, "/repos/a/b/releases/latest");
         assert!(split_url("http://insecure/x").is_err());
+    }
+
+    #[test]
+    fn pick_exe_asset_selects_first_exe() {
+        let assets = serde_json::json!([
+            {"name": "quicmic-v0.4.1-windows.zip", "url": "https://api.github.com/z"},
+            {"name": "quicmic.exe", "url": "https://api.github.com/a"},
+            {"name": "quicmic-arm64.exe", "url": "https://api.github.com/b"},
+        ]);
+        assert_eq!(
+            pick_exe_asset(assets.as_array().unwrap()),
+            Some((
+                "quicmic.exe".to_string(),
+                "https://api.github.com/a".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn pick_exe_asset_none_when_no_exe() {
+        // v0.4.1 shipped only a .zip: the updater must report "no .exe asset"
+        // clearly, never download the zip as if it were the exe.
+        let assets = serde_json::json!([
+            {"name": "quicmic-v0.4.1-windows.zip", "url": "https://api.github.com/z"},
+            {"name": "notes.txt", "url": "https://api.github.com/t"},
+        ]);
+        assert_eq!(pick_exe_asset(assets.as_array().unwrap()), None);
+        assert_eq!(pick_exe_asset(&[]), None);
+    }
+
+    #[test]
+    fn pick_exe_asset_rejects_exe_suffixed_archives() {
+        let assets = serde_json::json!([
+            {"name": "quicmic.exe.zip", "url": "https://api.github.com/z"},
+        ]);
+        assert_eq!(pick_exe_asset(assets.as_array().unwrap()), None);
+    }
+
+    #[test]
+    fn looks_like_pe_checks_mz_magic() {
+        assert!(looks_like_pe(b"MZ\x90\x00rest of a pe"));
+        assert!(!looks_like_pe(b""));
+        assert!(!looks_like_pe(b"M"));
+        // An HTML error page served with a 200 must not pass as an exe.
+        assert!(!looks_like_pe(b"<html>not found</html>"));
+    }
+
+    #[test]
+    fn dechunk_rejects_truncated_body() {
+        // Stream ends mid-body: chunk data present but the trailing CRLF (and
+        // terminator) never arrive — must fail, not return a partial payload.
+        assert!(dechunk(b"6\r\nworld!\r").is_err());
+        assert!(dechunk(b"6\r\nworld!").is_err());
     }
 
     #[test]

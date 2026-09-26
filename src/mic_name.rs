@@ -5,10 +5,12 @@
 //! Windows only. The rename writes the endpoint's `PKEY_Device_FriendlyName`
 //! into the MMDevices property store:
 //! `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\{guid}\Properties`,
-//! value `{a45c254e-df1c-4efd-8020-67d146a8f9be},2` (REG_SZ).
-//! That hive is machine-wide, so the write needs an elevated process — without
-//! admin rights the command fails with a plain-English hint instead of a raw
-//! access-denied error.
+//! under the key's canonical `"{fmtid},pid"` value name for
+//! `PKEY_Device_FriendlyName` (derived from the constant itself, so the write
+//! always targets the property the code reads back). That hive is
+//! machine-wide, so the write needs an elevated process — without admin rights
+//! the command fails with a plain-English hint instead of a raw access-denied
+//! error.
 
 /// Default name the `mic-name` console command applies.
 pub const DEFAULT_MIC_NAME: &str = "QuicMic";
@@ -67,11 +69,22 @@ const CABLE_CAPTURE_MATCH: &str = "cable output";
 #[cfg(any(windows, test))]
 const CABLE_DESC_MATCH: &str = "vb-audio virtual cable";
 
-/// Registry value holding `PKEY_Device_FriendlyName` in an endpoint's
+/// Registry value name holding `PKEY_Device_FriendlyName` in an endpoint's
 /// `...\MMDevices\Audio\Capture\{guid}\Properties` key.
+///
+/// This is the canonical `"{fmtid},pid"` form, derived from the same
+/// `PROPERTYKEY` constant the code reads the name back with — so the write can
+/// never drift onto a neighbouring property again. (A hand-written value once
+/// targeted pid 2, which is `PKEY_Device_DeviceDesc`: the rename then changed
+/// nothing apps display, and it clobbered the driver-set description that the
+/// repeat-rename matching in `is_cable_capture_endpoint` relies on.)
 /// Windows-only; see above.
 #[cfg(windows)]
-const FRIENDLY_NAME_VALUE: &str = "{a45c254e-df1c-4efd-8020-67d146a8f9be},2";
+fn friendly_name_value_name() -> String {
+    use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+    let key = PKEY_Device_FriendlyName;
+    format!("{:?},{}", key.fmtid, key.pid).to_lowercase()
+}
 
 /// Rename the VB-Cable recording endpoint to `new_name` (`None` → "QuicMic").
 ///
@@ -226,7 +239,7 @@ fn rename_mic_windows(name: &str) -> anyhow::Result<String> {
         }
         return Err(e.into());
     }
-    let value_name = HSTRING::from(FRIENDLY_NAME_VALUE);
+    let value_name = HSTRING::from(friendly_name_value_name());
     let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
     let bytes: &[u8] =
         unsafe { std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2) };
@@ -313,5 +326,20 @@ mod tests {
         assert_eq!(parse_rename_mic(None), MicRenameMode::Auto);
         #[cfg(not(windows))]
         assert_eq!(parse_rename_mic(None), MicRenameMode::Off);
+    }
+
+    /// The registry write must target `PKEY_Device_FriendlyName` (pid 14), not
+    /// the neighbouring `PKEY_Device_DeviceDesc` (pid 2): only the friendly
+    /// name is what apps display, and the description must survive so repeat
+    /// renames keep matching the endpoint. Windows-only.
+    #[cfg(windows)]
+    #[test]
+    fn friendly_name_value_targets_pkey_device_friendlyname() {
+        use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+        assert_eq!(PKEY_Device_FriendlyName.pid, 14);
+        assert_eq!(
+            friendly_name_value_name(),
+            "a45c254e-df1c-4efd-8020-67d146a850e0,14"
+        );
     }
 }

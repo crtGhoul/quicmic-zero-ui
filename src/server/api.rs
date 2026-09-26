@@ -220,7 +220,7 @@ pub(super) async fn handle_pair(
         *state.phone_device_name.lock() = Some(name.clone());
     }
     if let Some(ref name) = device_name {
-        if state.mic_rename_mode == crate::mic_name::MicRenameMode::Auto {
+        if *state.mic_rename_mode.lock() == crate::mic_name::MicRenameMode::Auto {
             match crate::mic_name::rename_mic(Some(name)) {
                 Ok(applied) => {
                     info!(applied = %applied, "Mic endpoint auto-renamed to phone name");

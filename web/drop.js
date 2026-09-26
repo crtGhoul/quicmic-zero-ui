@@ -110,6 +110,12 @@ let dc = null;
 let incoming = null;          // file currently being received
 const sendQueue = [];
 let sending = false;
+// ICE candidates that arrived before the peer connection (or its remote
+// description) was ready — e.g. the caller's trickle candidates, which
+// routinely all arrive while the callee is still staring at the ringing
+// modal. Dropping them breaks the connection, so they are buffered here
+// and flushed once setRemoteDescription succeeds.
+let pendingIce = [];
 
 function setStatus(state, text) {
   $('status').className = 'status ' + state;
@@ -122,6 +128,10 @@ function teardown() {
   dc = null; pc = null; incoming = null;
   clearTimeout(connectTimer);
   sendQueue.length = 0; sending = false;
+  // NOTE: pendingIce is deliberately NOT cleared here — acceptCall() relies
+  // on the caller's early trickle candidates surviving newPC(); it filters
+  // and re-takes them itself. Every other path that kills a call clears the
+  // buffer explicitly (endCallAttempt, callDevice, declineCall).
   // tap-to-connect call state (the matchmaker socket itself stays up)
   viaSignal = false; peerId = null; peerName = '';
   outgoingCall = null; incomingOffer = null;
@@ -162,20 +172,24 @@ function waitGathering() {
 /* ---------- host flow ---------- */
 async function hostStart() {
   newPC();
-  $('hostCode').value = '';
+  pendingIce = []; // manual code pairing never trickles — drop stale signal state
+  const myPc = pc; // a second Share tap supersedes this attempt — don't let
+  $('hostCode').value = '';   // the stale one scribble over the new one's UI
   $('hostAnswer').value = '';
   $('qr').innerHTML = '';
-  dc = pc.createDataChannel('localdrop', { ordered: true });
+  dc = myPc.createDataChannel('localdrop', { ordered: true });
   wireDC();
   setStatus('idle', 'generating code…');
   try {
-    await pc.setLocalDescription(await pc.createOffer());
+    await myPc.setLocalDescription(await myPc.createOffer());
     await waitGathering();
-    const code = encodeSDP(pc.localDescription);
+    if (pc !== myPc) return;
+    const code = encodeSDP(myPc.localDescription);
     $('hostCode').value = code;
     renderQR(code);
     setStatus('idle', 'waiting for partner…');
   } catch (err) {
+    if (pc !== myPc) return;
     setStatus('bad', 'failed to start');
   }
 }
@@ -191,8 +205,15 @@ function renderQR(text) {
 }
 
 $('btnConnect').addEventListener('click', async () => {
+  if (!pc) {
+    // The previous attempt timed out and tore the peer connection down —
+    // the pasted reply belongs to a dead offer, so mint a fresh code
+    // instead of silently doing nothing.
+    hostStart();
+    return;
+  }
   const code = $('hostAnswer').value.trim();
-  if (!code || !pc) return;
+  if (!code) return;
   const parsed = parseCode(code, 'answer');
   if (parsed.error) {
     alert("That doesn't look like a reply code.\n\nCopy the FULL reply code from the other device's Receive screen (tap its Copy button) and paste it here.");
@@ -222,15 +243,23 @@ $('btnMakeReply').addEventListener('click', async () => {
     return;
   }
   newPC();
+  pendingIce = []; // manual code pairing never trickles — drop stale signal state
+  const myPc = pc; // same supersede guard as hostStart (double-tap Receive)
   setStatus('idle', 'generating reply…');
   try {
-    await pc.setRemoteDescription(parsed.desc);
-    await pc.setLocalDescription(await pc.createAnswer());
+    await myPc.setRemoteDescription(parsed.desc);
+    await myPc.setLocalDescription(await myPc.createAnswer());
     await waitGathering();
-    $('joinReply').value = encodeSDP(pc.localDescription);
+    if (pc !== myPc) return;
+    $('joinReply').value = encodeSDP(myPc.localDescription);
     $('replyWrap').classList.remove('hidden');
     setStatus('idle', 'waiting for host…');
+    // The host may never paste our reply — say so instead of hanging on
+    // "waiting for host…" forever. Generous window: the host is a human
+    // copying a long code between devices.
+    watchConnect(120000);
   } catch (e) {
+    if (pc !== myPc) return;
     setStatus('bad', 'bad code');
     alert("That code didn't work — double-check it and try again.");
   }
@@ -264,6 +293,11 @@ function onData(e) {
     try { m = JSON.parse(e.data); } catch (err) { return; }
     if (m.t === 'msg') addText(false, m.text);
     else if (m.t === 'file-meta') {
+      if (incoming && incoming.meta.id !== m.id) {
+        // A new transfer started before the previous one finished — fail the
+        // old card instead of silently mixing its chunks into the new file.
+        incoming.el.querySelector('.fname').textContent += ' — failed';
+      }
       incoming = { meta: m, parts: [], got: 0, el: fileCard(false, m.name, m.size) };
     } else if (m.t === 'file-end' && incoming && incoming.meta.id === m.id) {
       finishFile();
@@ -683,6 +717,7 @@ function callDevice(id, name) {
   if (outgoingCall || incomingOffer) return;
   if (dc && dc.readyState === 'open') return;
   newPC();
+  pendingIce = []; // fresh outgoing call — any buffered candidates are stale
   outgoingCall = { id, name };
   viaSignal = true; peerId = id; peerName = name;
   dc = pc.createDataChannel('localdrop', { ordered: true });
@@ -699,6 +734,18 @@ function callDevice(id, name) {
       watchConnect(20000);
     } catch (e) { endCallAttempt("couldn't start the call"); }
   })();
+}
+
+/* Candidates buffered in pendingIce that belong to `from` can now be
+   handed to WebRTC — the remote description is in place. */
+function flushPendingIce(from) {
+  if (!pc || !pc.remoteDescription || !pendingIce.length) return;
+  const rest = [];
+  for (const c of pendingIce) {
+    if (c.from === from) pc.addIceCandidate(c.candidate).catch(() => {});
+    else rest.push(c);
+  }
+  pendingIce = rest;
 }
 
 /* Incoming signal from the matchmaker. */
@@ -720,19 +767,29 @@ function onRemoteSignal(from, fromName, p) {
       const sdp = sdpStr(p.sdp);
       if (!sdp) { endCallAttempt("couldn't connect"); return; }
       pc.setRemoteDescription({ type: 'answer', sdp })
+        .then(() => flushPendingIce(from))
         .catch(() => endCallAttempt("couldn't connect"));
     }
   } else if (p.kind === 'ice') {
     const mine = outgoingCall && outgoingCall.id === from;
     const theirs = incomingOffer && incomingOffer.from === from;
-    if (pc && (mine || theirs) && p.candidate) {
-      pc.addIceCandidate(p.candidate).catch(() => {});
+    if ((mine || theirs) && p.candidate) {
+      if (pc && pc.remoteDescription) {
+        pc.addIceCandidate(p.candidate).catch(() => {});
+      } else if (pendingIce.length < 100) {
+        // No peer connection yet (callee hasn't tapped Accept) or the remote
+        // description isn't set — adding now would reject, so hold the
+        // candidate until flushPendingIce runs. Capped: a peer flooding us
+        // with candidates must not grow this without bound.
+        pendingIce.push({ from, candidate: p.candidate });
+      }
     }
   } else if (p.kind === 'declined') {
     if (outgoingCall && outgoingCall.id === from) {
       endCallAttempt(fromName + ' declined');
     } else if (incomingOffer && incomingOffer.from === from) {
       incomingOffer = null; // caller hung up while ringing us
+      pendingIce = [];
       $('callModal').classList.add('hidden');
       setStatus('idle', 'not connected');
     }
@@ -744,7 +801,9 @@ async function acceptCall() {
   incomingOffer = null;
   $('callModal').classList.add('hidden');
   if (!inv) return;
-  newPC();
+  const heldIce = pendingIce.filter((c) => c.from === inv.from);
+  newPC(); // teardown(); the caller's early candidates in heldIce survive it
+  pendingIce = heldIce;
   viaSignal = true; peerId = inv.from; peerName = inv.fromName;
   setStatus('idle', 'connecting…');
   pc.onicecandidate = (e) => {
@@ -754,6 +813,7 @@ async function acceptCall() {
     const offerSdp = sdpStr(inv.sdp);
     if (!offerSdp) throw new Error('bad offer sdp');
     await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+    flushPendingIce(inv.from); // the caller's trickled candidates arrived early
     await pc.setLocalDescription(await pc.createAnswer());
     sigSend({ t: 'signal', to: inv.from, payload: { kind: 'answer', sdp: pc.localDescription.sdp } });
     watchConnect(20000);
@@ -763,6 +823,7 @@ async function acceptCall() {
 function declineCall() {
   const inv = incomingOffer;
   incomingOffer = null;
+  pendingIce = [];
   $('callModal').classList.add('hidden');
   if (inv) sigSend({ t: 'signal', to: inv.from, payload: { kind: 'declined' } });
   setStatus('idle', 'not connected');
@@ -782,6 +843,7 @@ function endCallAttempt(msg) {
   setStatus('bad', msg);
   try { if (pc) pc.close(); } catch (e) { /* noop */ }
   pc = null; dc = null;
+  pendingIce = [];
   viaSignal = false; peerId = null; peerName = '';
 }
 

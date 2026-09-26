@@ -155,7 +155,9 @@ pub struct AppState {
     /// automatic mic renames.
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
     /// How the capture endpoint's display name is managed (`--rename-mic`).
-    pub mic_rename_mode: MicRenameMode,
+    /// Shared so the GUI can switch the mode at runtime; the pair handler
+    /// reads it on every pairing.
+    pub mic_rename_mode: Arc<parking_lot::Mutex<MicRenameMode>>,
     /// The endpoint name this server actually applied (`None` when it never
     /// renamed anything). Reported to the phone so its UI can show what apps
     /// like Discord will list as the mic input.

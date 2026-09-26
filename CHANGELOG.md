@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-09-26
+
+### Added
+- **Native app window (no more command-line only):** the app now opens a real GUI by default when a display is available (`--console` keeps the old terminal UI). Five tabs — **Status** (live mic/audio state), **Pair** (native QR code, large pairing PIN with show/mask, copy, rotate, open-QR-page), **Devices** (mic output-device picker with virtual-cable recommendations), **Settings** (gain, noise gate, latency threshold, volume, monitor mute, mic rename mode, update-check opt-out), **Diagnostics** (cert hash, transport, update status). Background state polling ~3 Hz; preferences in `gui_prefs.json`.
+- **Mic rename mode switch in the GUI:** auto / off / fixed is now changeable at runtime from Settings (previously `--rename-mic` at startup only). Auto renames the capture endpoint to the paired phone's name on every pairing, so Discord lists e.g. "iPhone" instead of "CABLE Output".
+- Tray **Show / Hide window** menu item in GUI mode (Windows `--tray`).
+
+### Fixed
+- **Mic rename wrote the wrong registry property:** the code used a mistyped property-set GUID and PID 2 (the device description) instead of the real `PKEY_Device_FriendlyName` (PID 14), so Discord kept showing "CABLE Output" and repeat renames broke. Now derived from Windows' own constant, with a regression test.
+- **Speaker died silently on device unplug:** a lost/invalidated WASAPI endpoint killed capture permanently while the app looked alive. Capture now retries once per second until the endpoint returns. Also fixed a `CoTaskMemFree` leak on the WASAPI init-error path.
+- **Drop file sharing:** early ICE candidates were discarded before the peer connection existed (breaking tap-to-connect); the Connect button stayed dead after a host timeout; the receive flow could wait forever; overlapping file metadata could corrupt a transfer; double-tapping Share/Receive let stale attempts overwrite the UI.
+- **Self-updater pointed at the wrong repo** (`Fix3dll/QuicMic`) — now checks `crtGhoul/quicmic-zero-ui`. Also: non-Windows no longer downloads before the platform check, chunked downloads can't silently truncate, downloaded assets are validated as Windows executables (MZ/PE check), and zip-only releases report cleanly instead of failing obscurely.
+- Added a regression test: a restarted server keeps serving the persisted certificate (pairing/PIN/token survive restarts).
+
+### Notes
+- The GUI was verified under Xvfb (all five tabs render, PIN rotation works); the tray Show/Hide item and the Windows registry rename still need real Windows verification, and pairing/audio still need the iPhone + Discord end-to-end check.
+
 ## [0.4.1] - 2026-09-25
 
 ### Fixed

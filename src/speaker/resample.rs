@@ -135,4 +135,31 @@ mod tests {
         let measured = crossings as f64 / dur;
         assert!((measured - freq).abs() < 15.0, "measured {measured} Hz");
     }
+
+    /// Stereo in -> stereo out at the native rate: channels pass through
+    /// untouched (no fold-down, no duplication, no resampling error).
+    #[test]
+    fn stereo_passthrough_at_unity_rate() {
+        let mut conv = Converter::new(SAMPLE_RATE, 2);
+        let chunk: Vec<f32> = (0..FRAME_SAMPLES)
+            .flat_map(|i| {
+                let t = i as f32 / FRAME_SAMPLES as f32;
+                [t, 1.0 - t]
+            })
+            .collect();
+        conv.push(&chunk);
+        let mut frames = Vec::new();
+        conv.drain(&mut frames);
+        assert_eq!(frames.len(), 1);
+        let f = &frames[0];
+        assert_eq!(f.len(), FRAME_SAMPLES * CHANNELS);
+        for i in 0..FRAME_SAMPLES {
+            let t = i as f32 / FRAME_SAMPLES as f32;
+            assert!((f[2 * i] - t).abs() < 1e-5, "left ch frame {i}");
+            assert!(
+                (f[2 * i + 1] - (1.0 - t)).abs() < 1e-5,
+                "right ch frame {i}"
+            );
+        }
+    }
 }

@@ -17,7 +17,7 @@ use std::sync::{
 };
 
 use tokio::sync::broadcast;
-use tracing::{error, info};
+use tracing::{info, warn};
 use windows::Win32::System::Com::StructuredStorage::PropVariantClear;
 use windows::Win32::{
     Devices::FunctionDiscovery::PKEY_Device_FriendlyName, Media::Audio::*, System::Com::*,
@@ -46,6 +46,12 @@ use super::resample::Converter;
 /// accepting phone clients onto a stream that can never produce audio.
 /// Keeping the COM interfaces on the single thread that created them also
 /// avoids `Send` issues (`windows` interface types are not `Send`).
+///
+/// If the stream dies later — e.g. the endpoint is unplugged and WASAPI
+/// reports `AUDCLNT_E_DEVICE_INVALIDATED` — the thread reopens it once per
+/// second until the generation bumps (the same "retry until back" policy as
+/// the mic output supervisor). Only the initial open is rendezvoused; later
+/// restarts never surface to the caller.
 pub fn spawn(
     tx: broadcast::Sender<Vec<f32>>,
     device: Option<String>,
@@ -64,15 +70,48 @@ pub fn spawn(
         .spawn(move || {
             // Note: `start_capture` initializes COM (MTA) itself via
             // `open_render_device`; everything COM stays on this thread.
-            match start_capture(device.as_deref()) {
-                Ok(cap) => {
-                    let _ = ready_tx.send(Ok(()));
-                    if let Err(e) = pump(tx, cap, my_generation, &generation) {
-                        error!("loopback capture failed: {e:#}");
+            let mut ready_tx = Some(ready_tx);
+            // Consecutive failed (re)opens; reset on success. Drives the
+            // sparse retry heartbeat so a long outage doesn't spam the log
+            // (same policy as the mic output supervisor).
+            let mut attempts: u32 = 0;
+            loop {
+                match start_capture(device.as_deref()) {
+                    Ok(cap) => {
+                        if let Some(tx) = ready_tx.take() {
+                            let _ = tx.send(Ok(()));
+                        }
+                        if attempts > 0 {
+                            info!("loopback capture rebuilt; streaming resumed");
+                        }
+                        attempts = 0;
+                        match pump(tx.clone(), cap, my_generation, &generation) {
+                            Ok(()) => return, // generation bumped: the fresh thread takes over
+                            Err(e) => warn!("loopback capture failed: {e:#}; retrying"),
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(tx) = ready_tx.take() {
+                            let _ = tx.send(Err(anyhow::anyhow!("{e:#}")));
+                            return; // startup failure: the caller reports it
+                        }
+                        attempts += 1;
+                        if attempts.is_multiple_of(30) {
+                            warn!(
+                                attempts,
+                                "speaker capture device still unavailable; retrying"
+                            );
+                        }
                     }
                 }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(anyhow::anyhow!("{e:#}")));
+                // 1 s backoff, waking early when a device switch bumps the
+                // generation so the replacement thread takes over promptly.
+                for _ in 0..20 {
+                    if generation.load(Ordering::Relaxed) != my_generation {
+                        info!("loopback capture stopping for device switch");
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
             }
         })
@@ -130,16 +169,19 @@ fn start_capture(wanted: Option<&str>) -> anyhow::Result<Capture> {
         })?;
         info!("loopback format on '{dev_name}': {in_ch}ch {in_rate}Hz {kind:?}");
 
-        // 20 ms buffer; shared mode, loopback flag.
-        client.Initialize(
+        // 20 ms buffer; shared mode, loopback flag. `Initialize` copies what it
+        // needs, so free the mix format on both paths — a `?` here would
+        // otherwise leak the CoTaskMemAlloc'd block.
+        let init = client.Initialize(
             AUDCLNT_SHAREMODE_SHARED,
             AUDCLNT_STREAMFLAGS_LOOPBACK,
             200_000,
             0,
             pwfx,
             None,
-        )?;
+        );
         CoTaskMemFree(Some(pwfx as *const c_void));
+        init?;
 
         let capture: IAudioCaptureClient = client.GetService()?;
         client.Start()?;

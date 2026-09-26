@@ -1,13 +1,13 @@
 [package]
 name = "quicmic"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 description = "Turn any device with a microphone and a web browser into a wireless PC microphone over WebTransport"
 license = "GPL-3.0-or-later"
 readme = "README.md"
 keywords = ["microphone", "audio", "webtransport", "streaming", "lan"]
 categories = ["multimedia::audio", "network-programming", "web-programming"]
-repository = "https://github.com/Fix3dll/QuicMic"
+repository = "https://github.com/crtGhoul/quicmic-zero-ui"
 # Keep the published crate lean: ship only what `cargo install` needs (src/ + the
 # embedded web/ assets + docs). Dev/release tooling, screenshots, AGENTS.md, and
 # the lockfile are excluded from the package.
@@ -89,6 +89,16 @@ mime_guess = "2.0"
 anyhow = "1"
 http = "1"
 qr2term = "0.3"
+# Direct use of the QR matrix for the native GUI pairing panel (`to_colors`
+# needs no extra features). Already in the lockfile via qr2term 0.3, so this
+# adds no new crates to the dependency tree.
+qrcode = "0.14"
+
+# Native GUI (egui/eframe): replaces the terminal console as the default UI
+# when a display is available. `--console` restores the old terminal UI.
+# Pure Rust; on Linux winit loads X11/Wayland/GL at runtime via dlopen, so no
+# new system build dependencies (dist-workspace.toml apt list is unchanged).
+eframe = "0.36"
 
 [target.'cfg(windows)'.dependencies]
 # Raw WASAPI loopback capture for the 🔊 Speaker tab (cpal can't do loopback).

@@ -271,4 +271,85 @@ mod tests {
         assert!(save_pin(&dir, "654321").is_err());
         let _ = fs::remove_dir_all(&dir);
     }
+
+    /// Regression test for the v0.4.1 pairing/connection path: after an app
+    /// restart, the server must present the exact certificate the phone
+    /// pinned (via the `cert_hash` in `/api/info`) together with its matching
+    /// private key. If either diverged, the phone's WebTransport
+    /// `serverCertificateHashes` check would fail and it could never connect.
+    ///
+    /// Rebuilds the wtransport identity from the persisted files exactly like
+    /// `load_or_create` does and compares bytes -- no network involved (a live
+    /// QUIC handshake needs UDP, which CI sandboxes typically block).
+    #[test]
+    fn persisted_identity_reload_serves_pinned_cert() {
+        use base64::Engine as _;
+        use wtransport::tls::Sha256Digest;
+
+        let dir = std::env::temp_dir().join(format!("quicmic-ident-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let lan_ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+
+        // First run: fresh identity, persisted to disk.
+        let (_wt1, tls1, pin1, fresh1) = load_or_create(&dir, lan_ip, false, None).unwrap();
+        assert!(fresh1, "first load should generate a fresh identity");
+
+        // Second run: simulated restart -- must reuse the persisted identity.
+        let (wt2, tls2, pin2, fresh2) = load_or_create(&dir, lan_ip, false, None).unwrap();
+        assert!(!fresh2, "restart must reuse the persisted identity");
+        assert_eq!(pin1, pin2, "PIN must survive a restart");
+        assert_eq!(
+            tls1.cert_hash_base64, tls2.cert_hash_base64,
+            "advertised cert hash must survive a restart"
+        );
+
+        // The wtransport identity handed to the real servers after a restart
+        // must serve the persisted certificate byte-for-byte.
+        let chain = wt2.certificate_chain().as_slice();
+        assert_eq!(
+            chain.len(),
+            1,
+            "expected the single self-signed certificate"
+        );
+        assert_eq!(
+            chain[0].der(),
+            tls2.cert_der.as_slice(),
+            "served certificate must match the persisted one"
+        );
+
+        // ...and its SHA-256 fingerprint must equal the advertised `/api/info`
+        // hash. This is exactly what the phone's `serverCertificateHashes`
+        // check verifies: base64 -> raw bytes, compared against the TLS-layer
+        // fingerprint of the served certificate.
+        let pinned: [u8; 32] = base64::engine::general_purpose::STANDARD
+            .decode(&tls2.cert_hash_base64)
+            .expect("advertised hash must be valid base64")
+            .try_into()
+            .expect("advertised hash must be 32 bytes");
+        assert_eq!(
+            chain[0].hash(),
+            Sha256Digest::new(pinned),
+            "served cert fingerprint must match the pinned hash"
+        );
+
+        // The private key must round-trip too, or the TLS handshake fails.
+        assert_eq!(
+            wt2.private_key().secret_der(),
+            tls2.key_der.as_slice(),
+            "private key must survive a restart"
+        );
+
+        // Rebuilding straight from the raw files on disk (the other restart
+        // path) must agree as well.
+        let cert_der = std::fs::read(dir.join("cert.der")).unwrap();
+        let key_der = std::fs::read(dir.join("key.der")).unwrap();
+        let (rebuilt, _) = crate::tls::identity_from_der(&cert_der, &key_der).unwrap();
+        assert_eq!(
+            rebuilt.certificate_chain().as_slice()[0].der(),
+            cert_der.as_slice(),
+            "file-rebuilt identity must serve the persisted cert"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

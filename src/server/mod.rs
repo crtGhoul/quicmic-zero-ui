@@ -249,7 +249,7 @@ mod tests {
             // fail — but no test exercises the shutdown path.
             shutdown_tx: tokio::sync::mpsc::channel::<()>(1).0,
             phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
-            mic_rename_mode: crate::mic_name::MicRenameMode::Off,
+            mic_rename_mode: Arc::new(parking_lot::Mutex::new(crate::mic_name::MicRenameMode::Off)),
             applied_mic_name: Arc::new(parking_lot::Mutex::new(None)),
         }
     }

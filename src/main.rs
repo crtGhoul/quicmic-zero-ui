@@ -1,5 +1,6 @@
 mod audio;
 mod console;
+mod gui;
 mod identity;
 mod mic_name;
 mod self_update;
@@ -269,6 +270,13 @@ struct Cli {
     /// prints a note and the app runs in console mode as usual.
     #[arg(long)]
     tray: bool,
+
+    /// Force the terminal console UI even when a display is available.
+    /// By default the app opens the native GUI window when a display is
+    /// detected (always on Windows/macOS; on Linux when DISPLAY or
+    /// WAYLAND_DISPLAY is set) and falls back to the console otherwise.
+    #[arg(long)]
+    console: bool,
 }
 
 #[tokio::main]
@@ -303,6 +311,14 @@ async fn run() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // The native GUI replaces the terminal console as the default UI whenever
+    // a display is available; `--console` (or no display, e.g. SSH without X
+    // forwarding) keeps the old terminal UI.
+    let use_gui = !cli.console && gui::display_available();
+    if use_gui {
+        info!("display detected — starting the native GUI (pass --console for the terminal UI)");
+    }
 
     #[cfg(not(windows))]
     if cli.tray {
@@ -454,36 +470,48 @@ async fn run() -> anyhow::Result<()> {
     }
 
     // ── Print startup banner ────────────────────────────────────────────
+    // Console mode only — the GUI shows the same information in its own
+    // panels (Pair tab for the QR, Diagnostics for the cert hash).
     let url = format!("https://{}:{}", url_host(&lan_ip), cli.port);
     let theme_lock: Arc<parking_lot::Mutex<console::Theme>> =
         Arc::new(parking_lot::Mutex::new(theme));
-    console::print_banner(
-        &theme_lock,
-        &url,
-        &pin_shared.lock(),
-        &identity.cert_hash_base64,
-    );
+    if !use_gui {
+        if cli.console {
+            info!("--console given — using the terminal console UI");
+        } else {
+            info!("no display detected — using the terminal console UI");
+        }
+        console::print_banner(
+            &theme_lock,
+            &url,
+            &pin_shared.lock(),
+            &identity.cert_hash_base64,
+        );
 
-    // Print QR code for easy mobile pairing (URL includes PIN as hash fragment)
-    let qr_url = format!("{}#{}", url, pin_shared.lock());
-    if let Err(e) = qr2term::print_qr(&qr_url) {
-        info!("Could not print QR code: {}", e);
+        // Print QR code for easy mobile pairing (URL includes PIN as hash fragment)
+        let qr_url = format!("{}#{}", url, pin_shared.lock());
+        if let Err(e) = qr2term::print_qr(&qr_url) {
+            info!("Could not print QR code: {}", e);
+        }
+        println!("Type 'help' and press Enter for console commands (status, qr, devices, ...).");
+        println!(
+            "Drop files phone↔PC: {}  (console: 'drop')",
+            console::LOCALDROP_URL
+        );
+        println!();
     }
-    println!("Type 'help' and press Enter for console commands (status, qr, devices, ...).");
-    println!(
-        "Drop files phone↔PC: {}  (console: 'drop')",
-        console::LOCALDROP_URL
-    );
-    println!();
 
     // ── Tray mode (Windows) ─────────────────────────────────────────────
     // The icon and its menu-event channel are kept alive for the whole run.
     // On other platforms --tray is a no-op (noted above) and this stays None.
+    // In GUI mode the tray menu gains a "Show / Hide window" item, handled by
+    // run_gui_mode; in console mode the main select! loop below handles the
+    // channel, exactly as before.
     #[cfg(windows)]
-    let mut tray: Option<(
-        tray::TrayApp,
-        tokio::sync::mpsc::UnboundedReceiver<tray::TrayAction>,
-    )> = if cli.tray {
+    let (tray_app, mut tray_rx): (
+        Option<tray::TrayApp>,
+        Option<tokio::sync::mpsc::UnboundedReceiver<tray::TrayAction>>,
+    ) = if cli.tray {
         if launched_by_double_click() {
             // The console was created just for us — hide it so the app feels
             // like a real Windows app. Launched from a terminal, the user's
@@ -494,23 +522,34 @@ async fn run() -> anyhow::Result<()> {
         // The pairing-QR page: use the LAN IP (bracketed for IPv6) because the
         // self-signed certificate's SAN covers the LAN IP, not 127.0.0.1.
         let tray_qr_url = format!("https://{}:{}/qr", url_host(&lan_ip), cli.port);
-        match tray::spawn(&status, &tray_qr_url) {
+        // GUI mode and console mode share the tray icon, but only the GUI has
+        // a window to show/hide: GUI mode gets the extra "Show / Hide window"
+        // menu item, console mode keeps Show QR + Quit. The icon only changes
+        // the presentation, never the server logic.
+        let spawned = tray::spawn(&status, &tray_qr_url, use_gui);
+        match spawned {
             Ok((app, rx)) => {
                 info!("tray mode: running as a system-tray app");
-                Some((app, rx))
+                (Some(app), Some(rx))
             }
             Err(e) => {
-                warn!("tray mode failed ({e:#}); continuing in console mode");
-                None
+                warn!("tray mode failed ({e:#}); continuing without tray");
+                (None, None)
             }
         }
     } else {
-        None
+        (None, None)
     };
 
     // Background, opt-out check for a newer release. Never blocks startup and stays
-    // silent unless a strictly newer version is found.
-    if !cli.no_update_check {
+    // silent unless a strictly newer version is found. Opt-out sources: the
+    // CLI flag / env var, or the GUI Settings checkbox (persisted next to the
+    // server identity so it survives restarts).
+    let prefs_path = gui::prefs_path(&data_dir);
+    let prefs = gui::load_prefs(&prefs_path);
+    let no_update_check = cli.no_update_check || prefs.update_check_opt_out;
+    let update_check_ran = !no_update_check;
+    if !no_update_check {
         let slot = update_status.clone();
         tokio::spawn(async move {
             if let Some(tag) = update_check::latest_if_newer().await {
@@ -623,10 +662,13 @@ async fn run() -> anyhow::Result<()> {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
     // Resolve the mic endpoint naming policy. A fixed `--rename-mic "NAME"`
     // is applied once here at startup; `auto` renames on every phone pairing
-    // (see the pair handler). Needs elevation on Windows; the name sticks
-    // afterwards, so one admin run is enough.
-    let mic_rename_mode = mic_name::parse_rename_mic(cli.rename_mic.as_deref());
-    let applied_mic_name = match &mic_rename_mode {
+    // (see the pair handler). Shared so the GUI can switch the mode at
+    // runtime. Needs elevation on Windows; the name sticks afterwards, so one
+    // admin run is enough.
+    let mic_rename_mode = Arc::new(parking_lot::Mutex::new(mic_name::parse_rename_mic(
+        cli.rename_mic.as_deref(),
+    )));
+    let applied_mic_name = match &*mic_rename_mode.lock() {
         mic_name::MicRenameMode::Fixed(name) => match mic_name::rename_mic(Some(name)) {
             Ok(applied) => {
                 info!(applied = %applied, "Mic endpoint renamed (fixed --rename-mic)");
@@ -647,7 +689,7 @@ async fn run() -> anyhow::Result<()> {
         wt_port: cli.port,
         lan_ip: lan_ip.to_string(),
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
-        update_status,
+        update_status: update_status.clone(),
         speaker_tx: speaker_tx.clone(),
         shutdown_tx,
         phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
@@ -681,6 +723,50 @@ async fn run() -> anyhow::Result<()> {
         cli.port,
         stream_state.clone(),
     ));
+
+    // ── GUI mode ────────────────────────────────────────────────────────
+    // The native window replaces the console as the default UI. eframe runs
+    // its event loop on this (main) thread; the servers keep running on the
+    // tokio workers. When the window closes, the normal graceful shutdown
+    // runs below.
+    if use_gui {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let gctx = gui::GuiCtx {
+            stream: stream_state.clone(),
+            url: url.clone(),
+            pin: pin_shared.clone(),
+            data_dir: data_dir.clone(),
+            cert_hash: identity.cert_hash_base64.clone(),
+            device_select: device_select.clone(),
+            speaker_running: speaker_running.clone(),
+            speaker_test_tone: cli.speaker_test_tone,
+            speaker_device: speaker_device.clone(),
+            monitor_present,
+            phone_device_name: phone_device_name.clone(),
+            mic_rename_mode: mic_rename_mode.clone(),
+            applied_mic_name: applied_mic_name.clone(),
+            update_status: update_status.clone(),
+            port: cli.port,
+            lan_ip: lan_ip.to_string(),
+            update_check_ran,
+            prefs_path: prefs_path.clone(),
+            shutdown_requested: shutdown_requested.clone(),
+            egui_ctx: Arc::new(parking_lot::Mutex::new(None)),
+        };
+        return run_gui_mode(
+            gctx,
+            stream_state,
+            axum_handle,
+            #[cfg(windows)]
+            tray_app,
+            #[cfg(windows)]
+            tray_rx,
+            https_task,
+            wt_task,
+            shutdown_rx,
+        )
+        .await;
+    }
 
     // ── Console command loop ────────────────────────────────────────────
     // A blocking stdin reader forwards typed lines to the main task. With
@@ -738,7 +824,7 @@ async fn run() -> anyhow::Result<()> {
             tray_quit = async {
                 #[cfg(windows)]
                 {
-                    if let Some((_app, rx)) = tray.as_mut() {
+                    if let Some(rx) = tray_rx.as_mut() {
                         loop {
                             match rx.recv().await {
                                 // "Show connection QR" is handled inside the
@@ -797,6 +883,145 @@ async fn run() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// GUI mode: background watchers (Ctrl+C, `/api/update`, a dying server task)
+/// close the window; eframe itself runs on this (main) thread while the
+/// servers keep running on the tokio workers. When the window closes, the
+/// same graceful shutdown as the console path runs.
+#[allow(clippy::too_many_arguments)]
+async fn run_gui_mode(
+    g: gui::GuiCtx,
+    stream_state: server::StreamState,
+    axum_handle: axum_server::Handle<SocketAddr>,
+    #[cfg(windows)] tray_app: Option<tray::TrayApp>,
+    #[cfg(windows)] mut tray_rx: Option<tokio::sync::mpsc::UnboundedReceiver<tray::TrayAction>>,
+    mut https_task: tokio::task::JoinHandle<anyhow::Result<()>>,
+    mut wt_task: tokio::task::JoinHandle<anyhow::Result<()>>,
+    mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
+) -> anyhow::Result<()> {
+    // The tray icon must stay alive for the whole run; dropping it removes
+    // the icon from the notification area.
+    #[cfg(windows)]
+    let _tray_app = tray_app;
+
+    // Holds a fatal server-task error, if one happens, so it can be returned
+    // after the window closes instead of being lost.
+    let server_error: Arc<parking_lot::Mutex<Option<anyhow::Error>>> =
+        Arc::new(parking_lot::Mutex::new(None));
+
+    // Closes the GUI window from any thread. The graceful shutdown itself
+    // runs after `gui::run` returns, on this task.
+    let shutdown_requested = g.shutdown_requested.clone();
+    let egui_ctx = g.egui_ctx.clone();
+    let close_window = move || {
+        shutdown_requested.store(true, Ordering::SeqCst);
+        if let Some(ctx) = egui_ctx.lock().clone() {
+            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+        }
+    };
+
+    // Tray menu (Windows `--tray`): "Show / Hide window" flips the viewport
+    // visibility, "Quit" closes the window. This runs on its own task rather
+    // than in the GUI frame loop so a hidden window (which draws no frames)
+    // can still be shown again. "Show connection QR" is handled inside the
+    // tray module itself (opens the browser) and never reaches the channel.
+    #[cfg(windows)]
+    tokio::spawn({
+        let close_window = close_window.clone();
+        let egui_ctx = egui_ctx.clone();
+        let window_visible = Arc::new(AtomicBool::new(true));
+        async move {
+            let Some(rx) = tray_rx.as_mut() else {
+                return;
+            };
+            while let Some(action) = rx.recv().await {
+                match action {
+                    tray::TrayAction::ShowQr => {}
+                    tray::TrayAction::ToggleWindow => {
+                        let visible = !window_visible.load(Ordering::SeqCst);
+                        window_visible.store(visible, Ordering::SeqCst);
+                        if let Some(ctx) = egui_ctx.lock().clone() {
+                            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Visible(visible));
+                        }
+                    }
+                    tray::TrayAction::Quit => close_window(),
+                }
+            }
+        }
+    });
+
+    // Ctrl+C — the console path's signal, routed through the window.
+    tokio::spawn({
+        let close_window = close_window.clone();
+        async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                info!("Ctrl+C received — shutting down.");
+                close_window();
+            }
+        }
+    });
+
+    // `/api/update` staged a new exe: shut down so the updater can swap it.
+    tokio::spawn({
+        let close_window = close_window.clone();
+        async move {
+            if shutdown_rx.recv().await.is_some() {
+                info!("Update requested via API — shutting down to apply.");
+                close_window();
+            }
+        }
+    });
+
+    // A server task ending is fatal (bind failure, crash) — surface it like
+    // the console loop does instead of leaving a dead window up. The watcher
+    // is cancelled after `gui::run` returns, *before* graceful shutdown tears
+    // the servers down: otherwise the teardown's own task endings would race
+    // the watcher and turn a clean Quit into a spurious "ended unexpectedly"
+    // error.
+    let (watcher_cancel_tx, watcher_cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    let watcher = tokio::spawn({
+        let close_window = close_window.clone();
+        let server_error = server_error.clone();
+        async move {
+            let err: anyhow::Error = tokio::select! {
+                res = &mut https_task => res
+                    .map_err(|e| anyhow::anyhow!("HTTPS server task failed: {e}"))
+                    .and_then(|r| r)
+                    .err()
+                    .unwrap_or_else(|| anyhow::anyhow!("HTTPS server task ended unexpectedly")),
+                res = &mut wt_task => res
+                    .map_err(|e| anyhow::anyhow!("WebTransport server task failed: {e}"))
+                    .and_then(|r| r)
+                    .err()
+                    .unwrap_or_else(|| anyhow::anyhow!("WebTransport server task ended unexpectedly")),
+                _ = watcher_cancel_rx => return,
+            };
+            *server_error.lock() = Some(err);
+            close_window();
+        }
+    });
+
+    // Blocks until the window closes (Quit button, tray, Ctrl+C, updater).
+    if let Err(e) = gui::run(g) {
+        return Err(anyhow::anyhow!(
+            "GUI failed to start: {e:#} (re-run with --console for the terminal UI)"
+        ));
+    }
+
+    // Normal close: cancel the watcher first. If a server task already ended
+    // with a real error, the watcher kept it in `server_error` and this send
+    // is a no-op; otherwise dropping the watcher's JoinHandles detaches the
+    // still-running server tasks so the teardown below can't trip it.
+    let _ = watcher_cancel_tx.send(());
+    let _ = watcher.await;
+
+    graceful_shutdown(&stream_state, &axum_handle).await;
+
+    if let Some(err) = server_error.lock().take() {
+        return Err(err);
+    }
     Ok(())
 }
 

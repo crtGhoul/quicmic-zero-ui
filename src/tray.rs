@@ -20,6 +20,7 @@ include!(concat!(env!("OUT_DIR"), "/tray_icon.rs"));
 const TRAY_ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tray_icon.rgba"));
 
 const MENU_ID_SHOW_QR: &str = "show-qr";
+const MENU_ID_TOGGLE_WINDOW: &str = "toggle-window";
 const MENU_ID_QUIT: &str = "quit";
 
 /// Actions the tray menu can request. They are forwarded to the main event loop
@@ -28,6 +29,9 @@ const MENU_ID_QUIT: &str = "quit";
 pub enum TrayAction {
     /// Open the connection-QR page in the default browser.
     ShowQr,
+    /// Show or hide the GUI window. The menu item only exists when the tray
+    /// was spawned with `window_toggle = true` (GUI mode).
+    ToggleWindow,
     /// Run the graceful shutdown (same as Ctrl+C / the `quit` console command).
     Quit,
 }
@@ -63,10 +67,12 @@ pub struct TrayApp {
 ///
 /// `status_text` is shown as the (disabled) first menu item, e.g.
 /// "QuicMic — 192.168.1.42:8443". `qr_url` is opened in the default browser
-/// when "Show connection QR" is clicked.
+/// when "Show connection QR" is clicked. When `window_toggle` is true a
+/// "Show / Hide window" item is added (GUI mode); console mode passes false.
 pub fn spawn(
     status_text: &str,
     qr_url: &str,
+    window_toggle: bool,
 ) -> anyhow::Result<(TrayApp, mpsc::UnboundedReceiver<TrayAction>)> {
     let icon = Icon::from_rgba(TRAY_ICON_RGBA.to_vec(), TRAY_ICON_WIDTH, TRAY_ICON_HEIGHT)
         .map_err(|e| anyhow::anyhow!("invalid tray icon image: {e}"))?;
@@ -76,6 +82,10 @@ pub fn spawn(
     let show_qr = MenuItem::with_id(MENU_ID_SHOW_QR, "Show connection QR", true, None);
     let quit = MenuItem::with_id(MENU_ID_QUIT, "Quit", true, None);
     menu.append(&status)?;
+    if window_toggle {
+        let toggle = MenuItem::with_id(MENU_ID_TOGGLE_WINDOW, "Show / Hide window", true, None);
+        menu.append(&toggle)?;
+    }
     menu.append(&show_qr)?;
     menu.append(&quit)?;
 
@@ -96,6 +106,7 @@ pub fn spawn(
             for event in MenuEvent::receiver().iter() {
                 let action = match event.id.as_ref() {
                     MENU_ID_SHOW_QR => TrayAction::ShowQr,
+                    MENU_ID_TOGGLE_WINDOW => TrayAction::ToggleWindow,
                     MENU_ID_QUIT => TrayAction::Quit,
                     _ => continue,
                 };

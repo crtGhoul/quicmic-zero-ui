@@ -19,11 +19,18 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
-/// GitHub `owner/repo` this build checks against. The casing must match the
-/// canonical repository name exactly: GitHub 301-redirects a wrong-case path to
-/// the canonical one, and `fetch_latest_tag` follows only a single redirect, so a
+/// GitHub `owner/repo` this build checks against: this app's own repo. It used to
+/// point at the upstream public fork, which made the check permanently report a
+/// "newer" version from a *different* project — exactly the false positive this
+/// check promises never to produce. Note the repo is private, so the
+/// unauthenticated request below gets no `Location` redirect and the check stays
+/// silent; real updates for this app go through the token-authenticated `update`
+/// command ([`crate::self_update`]).
+///
+/// The casing must match the canonical repository name exactly: GitHub 301-redirects a wrong-case path to the
+/// canonical one, and `fetch_latest_tag` follows only a single redirect, so a
 /// mismatch would capture the case-fix redirect instead of the release tag.
-const REPO: &str = "Fix3dll/QuicMic";
+const REPO: &str = "crtGhoul/quicmic-zero-ui";
 
 /// Overall budget for the whole check, so a slow or black-holed network can never
 /// keep the background task alive indefinitely.
@@ -141,7 +148,20 @@ pub(crate) async fn tls_connect(host: &str) -> anyhow::Result<TlsStream> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_version;
+    use super::{parse_version, releases_url, REPO};
+
+    #[test]
+    fn update_check_targets_this_apps_own_repo() {
+        // The check must compare against this app's own releases. Pointing it at
+        // the upstream fork made it permanently report a "newer" version from a
+        // different project — the false positive this module promises never to
+        // produce.
+        assert_eq!(REPO, "crtGhoul/quicmic-zero-ui");
+        assert_eq!(
+            releases_url(),
+            "https://github.com/crtGhoul/quicmic-zero-ui/releases"
+        );
+    }
 
     #[test]
     fn parses_and_orders_versions() {

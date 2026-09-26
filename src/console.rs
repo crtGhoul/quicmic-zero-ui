@@ -181,8 +181,9 @@ pub struct Ctx {
     pub monitor_present: bool,
     /// The phone's self-reported device name from the last pairing.
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
-    /// How the capture endpoint's display name is managed.
-    pub mic_rename_mode: crate::mic_name::MicRenameMode,
+    /// How the capture endpoint's display name is managed. Shared with the
+    /// server so the status panel always shows the live mode.
+    pub mic_rename_mode: Arc<parking_lot::Mutex<crate::mic_name::MicRenameMode>>,
     /// The endpoint name this server actually applied (if any).
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
 }
@@ -366,7 +367,7 @@ pub fn print_status(ctx: &Ctx) {
         "{} Mic rename mode: {}{}",
         p.label,
         p.value,
-        ctx.mic_rename_mode.label()
+        ctx.mic_rename_mode.lock().label()
     ));
     if speaker_peers.is_empty() {
         let state = if ctx.speaker_running.load(Ordering::Relaxed) {
