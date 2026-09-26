@@ -530,7 +530,7 @@ pub fn run(g: GuiCtx) -> anyhow::Result<()> {
         "QuicMic",
         native_options,
         Box::new(move |cc| {
-            // Refined dark theme (visuals only) before anything renders.
+            // QuicMic dark theme (visuals only) before anything renders.
             theme::apply(&cc.egui_ctx);
             // Publish the live context so background watchers (Ctrl+C,
             // `/api/update`) can close the window from another thread.
