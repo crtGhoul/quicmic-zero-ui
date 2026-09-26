@@ -601,6 +601,11 @@ async fn run() -> anyhow::Result<()> {
         Arc::new(parking_lot::Mutex::new(None));
     let speaker_generation = Arc::new(AtomicU64::new(0));
     let speaker_running = Arc::new(AtomicBool::new(false));
+    // Runtime test-tone state for the GUI's live toggle (Status tab).
+    // Initialized from the CLI flag; default behavior is unchanged (tone off
+    // unless requested). The GUI flips this at runtime via
+    // gui::set_speaker_test_tone.
+    let speaker_test_tone = Arc::new(AtomicBool::new(cli.speaker_test_tone));
 
     // Validate --speaker-device against the real endpoint list (Windows).
     #[cfg(windows)]
@@ -739,7 +744,10 @@ async fn run() -> anyhow::Result<()> {
             cert_hash: identity.cert_hash_base64.clone(),
             device_select: device_select.clone(),
             speaker_running: speaker_running.clone(),
-            speaker_test_tone: cli.speaker_test_tone,
+            speaker_test_tone: speaker_test_tone.clone(),
+            cli_test_tone: cli.speaker_test_tone,
+            speaker_tx: speaker_tx.clone(),
+            speaker_generation: speaker_generation.clone(),
             speaker_device: speaker_device.clone(),
             monitor_present,
             phone_device_name: phone_device_name.clone(),

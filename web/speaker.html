@@ -53,6 +53,12 @@
           <option value="smooth">Smooth · ~240 ms</option>
         </select>
       </label>
+      <label class="check" id="sinkRow"><span>Output device<small>Send the audio to your Bluetooth earbuds. Needs a Chromium-based browser.</small></span>
+        <select id="sinkSel" class="select" aria-label="Audio output device">
+          <option value="">System default</option>
+        </select>
+      </label>
+      <p id="sinkUnsupported" class="hint" hidden>This browser can&apos;t switch output devices, so audio follows the system default. (Output selection needs <code>setSinkId</code>, which iOS Safari doesn&apos;t provide.)</p>
       <button id="btnTone" class="btn">Play local test tone</button>
       <p class="hint">The test tone plays on this phone only (no network) — a quick way to prove your earbuds are routed before streaming.</p>
       <p class="hint">Speaker engine: <b>48 kHz stereo · 20 ms frames</b> over an encrypted WebSocket. Runs alongside the 🎤 Mic tab — both directions at once.</p>

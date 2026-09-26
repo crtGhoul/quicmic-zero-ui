@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-26
+
+### Added
+- **Native Android app** (new `android/` project) — QR pairing, certificate pinning, background mic service, Bluetooth routing, speaker playback. *(implemented; real-device check by the user after release)*
+- **Native iOS app (best effort)** (new `ios/` project) — ships as an **unsigned IPA**; the user signs it with their own free Apple ID before installing. *(implemented; user signs and installs after release)*
+- **Speaker output-device picker on the phone web UI** — choose which phone audio output (e.g. Bluetooth earbuds vs phone speaker) plays the PC speaker stream. *(implemented; real-device check pending)*
+- **Connection-quality readout** on the phone web UI. *(implemented; real-device check pending)*
+- **Speaker test-tone toggle** in the PC GUI Status tab — feed the phone a synthetic 440 Hz tone instead of system-audio capture to verify routing. *(implemented; real Windows/WASAPI check pending)*
+- CI workflows for the new apps: `.github/workflows/android.yml` (Gradle -> debug APK artifact) and `.github/workflows/ios.yml` (macOS runner, `xcodebuild CODE_SIGNING_ALLOWED=NO` -> unsigned IPA artifact). These are committed by the user via the GitHub web UI (see `manual-steps/00-add-workflows.md`), because our GitHub token lacks the Workflows permission.
+
+### Notes
+- Version bumped from 0.4.2 to 0.5.0. Verified-vs-pending status of each item above is recorded in `FINDINGS.md` (Mission 2 log) — nothing here has been confirmed on the user's iPhone 17 Pro Max / OnePlus 13 / Windows PC yet.
+
 ## [0.4.2] - 2026-09-26
 
 ### Added

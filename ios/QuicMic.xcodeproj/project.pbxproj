@@ -1,0 +1,69 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+/* Begin PBXBuildFile section */
+		FB5CECD5E6F95B93A19C9AC5 = {isa = PBXBuildFile; fileRef = 6ADA5DAE8BD3550AA885A2F6; };
+		E005E610DDEE5F11B1C70192 = {isa = PBXBuildFile; fileRef = A1F56473AC4958BCA75FDF32; };
+		4E7FD0E2B7515B29A585E80B = {isa = PBXBuildFile; fileRef = DA402791CE1C5AFFB08123E2; };
+		2BA936593E2A5FA091C6823C = {isa = PBXBuildFile; fileRef = 804482E71C605E7CACCE1A04; };
+		1E39C872C1C056518F0A2F80 = {isa = PBXBuildFile; fileRef = F51137DF59CF5E12BE623D52; };
+		108BB7A1AE065215825DD8CC = {isa = PBXBuildFile; fileRef = 10BA42DA6A1251988322181E; };
+		878AB1FFB13E588D91C80950 = {isa = PBXBuildFile; fileRef = 6AE45FA63E5F5C43AEAA94DD; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		385C2FC830C05FA0A34E3552 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuicMic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6ADA5DAE8BD3550AA885A2F6 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuicMicApp.swift; sourceTree = "<group>"; };
+		A1F56473AC4958BCA75FDF32 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		DA402791CE1C5AFFB08123E2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAPI.swift; sourceTree = "<group>"; };
+		804482E71C605E7CACCE1A04 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
+		F51137DF59CF5E12BE623D52 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		10BA42DA6A1251988322181E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuicMicController.swift; sourceTree = "<group>"; };
+		6AE45FA63E5F5C43AEAA94DD = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		7BA15C130EE053649743EB06 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7D12D4C6CE255065B42143E3 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (FB5CECD5E6F95B93A19C9AC5, E005E610DDEE5F11B1C70192, 4E7FD0E2B7515B29A585E80B, 2BA936593E2A5FA091C6823C, 1E39C872C1C056518F0A2F80, 108BB7A1AE065215825DD8CC, 878AB1FFB13E588D91C80950, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7062CBBD0C375B578B9459F7 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		14C2165FFBA35014850D2AD4 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXGroup section */
+		1B78566A7ECF54AEAD1ECCBB = {isa = PBXGroup; children = (CA44CFE3857251939E53C602, B36047A7BB9054C4992E758D, ); sourceTree = "<group>"; };
+		CA44CFE3857251939E53C602 = {isa = PBXGroup; children = (6ADA5DAE8BD3550AA885A2F6, A1F56473AC4958BCA75FDF32, DA402791CE1C5AFFB08123E2, 804482E71C605E7CACCE1A04, F51137DF59CF5E12BE623D52, 10BA42DA6A1251988322181E, 6AE45FA63E5F5C43AEAA94DD, 7BA15C130EE053649743EB06, ); path = QuicMic; sourceTree = "<group>"; };
+		B36047A7BB9054C4992E758D = {isa = PBXGroup; children = (385C2FC830C05FA0A34E3552, ); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D196EB6ABC98579DB4765563 = {isa = PBXNativeTarget; buildConfigurationList = 2154908B1D305FAAABF126C0; buildPhases = (7D12D4C6CE255065B42143E3, 7062CBBD0C375B578B9459F7, 14C2165FFBA35014850D2AD4, ); buildRules = (); dependencies = (); name = QuicMic; packageProductDependencies = (); productName = QuicMic; productReference = 385C2FC830C05FA0A34E3552; productType = "com.apple.product-type.application"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FE288C4AF34053D293A32B70 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1600; TargetAttributes = {D196EB6ABC98579DB4765563 = {CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = 5AC26DFA1C44546594CC1B53; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, ); mainGroup = 1B78566A7ECF54AEAD1ECCBB; productRefGroup = B36047A7BB9054C4992E758D; projectDirPath = ""; projectRoot = ""; targets = (D196EB6ABC98579DB4765563, ); };
+/* End PBXProject section */
+
+/* Begin XCBuildConfiguration section */
+		6BBC84CB009A5D4796546284 = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ANALYZER_NONNULL = YES; CLANG_CXX_LANGUAGE_STANDARD = "gnu++20"; CLANG_ENABLE_OBJC_ARC = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_STRICT_OBJC_MSGSEND = YES; GCC_C_LANGUAGE_STANDARD = gnu17; MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE; MTL_FAST_MATH = YES; GCC_OPTIMIZATION_LEVEL = 0; ONLY_ACTIVE_ARCH = YES; SWIFT_OPTIMIZATION_LEVEL = -Onone; }; name = Debug; };
+		7F30A7DB2F505AEF9B1497E7 = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ANALYZER_NONNULL = YES; CLANG_CXX_LANGUAGE_STANDARD = "gnu++20"; CLANG_ENABLE_OBJC_ARC = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_STRICT_OBJC_MSGSEND = YES; GCC_C_LANGUAGE_STANDARD = gnu17; MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE; MTL_FAST_MATH = YES; SWIFT_OPTIMIZATION_LEVEL = -O; }; name = Release; };
+		4C837342619A5774B99FBB8D = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO; CODE_SIGN_IDENTITY = ""; CODE_SIGN_STYLE = Manual; DEVELOPMENT_TEAM = ""; INFOPLIST_FILE = QuicMic/Info.plist; INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.crtghoul.quicmic; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; }; name = Debug; };
+		A6BF2152A34052D88E1173D3 = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO; CODE_SIGN_IDENTITY = ""; CODE_SIGN_STYLE = Manual; DEVELOPMENT_TEAM = ""; INFOPLIST_FILE = QuicMic/Info.plist; INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.crtghoul.quicmic; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; SWIFT_OPTIMIZATION_LEVEL = -O; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5AC26DFA1C44546594CC1B53 = {isa = XCConfigurationList; buildConfigurations = (6BBC84CB009A5D4796546284, 7F30A7DB2F505AEF9B1497E7, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		2154908B1D305FAAABF126C0 = {isa = XCConfigurationList; buildConfigurations = (4C837342619A5774B99FBB8D, A6BF2152A34052D88E1173D3, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = FE288C4AF34053D293A32B70;
+}

@@ -77,6 +77,7 @@ let audioFrameWaiter = null; // Resolver used to verify a recovery rung actually
 let audioRecovering = false; // Guards against overlapping recovery attempts.
 let interruptionNotified = false; // One server warn per interruption episode (no spam).
 let unhealthySince = 0;      // When the health check first saw trouble (grace period).
+let lastQualityRender = 0;   // Last main-screen link-quality repaint (throttled to >= 2 s).
 
 // ── DOM References ────────────────────────────────────────────────────
 const pairScreen = document.getElementById('pair-screen');
@@ -104,6 +105,8 @@ const statBuffer = document.getElementById('stat-buffer');
 const statPackets = document.getElementById('stat-packets');
 const statUptime = document.getElementById('stat-uptime');
 const statLoss = document.getElementById('stat-loss');
+// Main-screen connection-quality readout (ping + server packet counters).
+const statLinkQuality = document.getElementById('link-quality');
 const toast = document.getElementById('toast');
 const updateBanner = document.getElementById('update-banner');
 const updateText = document.getElementById('update-text');
@@ -112,6 +115,9 @@ const updateDismiss = document.getElementById('update-dismiss');
 const powerSaveBtn = document.getElementById('power-save-btn');
 const powerSaveOverlay = document.getElementById('power-save-overlay');
 const exitPowerSaveBtn = document.getElementById('exit-power-save-btn');
+// Diagnose-connection button (id uses kebab-case; the bare `diagBtn` global
+// some browsers expose for camelCase ids does not exist for it).
+const diagBtn = document.getElementById('diag-btn');
 
 // Settings UI
 const settingsBtn = document.getElementById('settings-btn');
@@ -2170,6 +2176,7 @@ function updateStats() {
         statPing.textContent = '—';
         statBuffer.textContent = '—';
         statLoss.textContent = '—';
+        renderLinkQualityUnavailable();
     }
 
     // Fetch server stats for packet loss, ping, and buffer depth display.
@@ -2185,14 +2192,48 @@ function updateStats() {
     }
 }
 
+// Main-screen connection-quality readout: client-measured ping plus the
+// server's latency/buffer depth and packet counters from /api/stats. The
+// underlying fetch stays at 1 s (it doubles as the iOS shutdown detector);
+// only this DOM repaint is throttled to at most every 2 s.
+function renderLinkQuality(pingMs, data) {
+    if (!statLinkQuality) return;
+    const now = Date.now();
+    if (now - lastQualityRender < 2000) return;
+    lastQualityRender = now;
+    const pingTxt = pingMs === null ? '—' : pingMs + ' ms';
+    // buffer_ms is the server-tracked output latency, computed from the actual
+    // capture rate (accurate for non-48 kHz sources).
+    const bufMs = Number(data.buffer_ms);
+    const bufTxt = Number.isNaN(bufMs) ? '—' : bufMs + ' ms';
+    const recv = Number(data.packets_received) || 0;
+    const lost = Number(data.packets_lost) || 0;
+    const loss = Number(data.loss_percent);
+    const lossTxt = Number.isNaN(loss) ? '—' : loss.toFixed(2) + '%';
+    statLinkQuality.textContent =
+        `link quality: ${pingTxt} ping · ${bufTxt} buffer · ` +
+        `${recv.toLocaleString()} packets · ${lost.toLocaleString()} lost (${lossTxt})`;
+}
+
+// Clear "unavailable" state: shown when idle, unauthenticated (401), or the
+// stats fetch fails. Resets the throttle so the next good sample repaints
+// immediately.
+function renderLinkQualityUnavailable() {
+    if (!statLinkQuality) return;
+    lastQualityRender = 0;
+    statLinkQuality.textContent = 'link quality: unavailable';
+}
+
 async function fetchServerStats() {
     if (isReconnecting) return;
 
     let resp;
+    let pingMs = null;
     try {
         const fetchStartTime = performance.now();
         resp = await fetchWithTimeout('/api/stats', { headers: { 'X-Session-Token': sessionToken } });
-        statPing.textContent = `${Math.round(performance.now() - fetchStartTime)} ms`;
+        pingMs = Math.round(performance.now() - fetchStartTime);
+        statPing.textContent = `${pingMs} ms`;
     } catch (e) {
         // The HTTP poll is the fastest, most reliable shutdown signal on iOS
         // Safari (the WebTransport close surfaces seconds late). A network error
@@ -2201,6 +2242,7 @@ async function fetchServerStats() {
         statPing.textContent = '—';
         statBuffer.textContent = '—';
         statLoss.textContent = '—';
+        renderLinkQualityUnavailable();
         // If the probe succeeds the server is up and the stream is still fine,
         // so an isolated failure is silently tolerated.
         if (isStreaming && !isReconnecting && !(await isServerAlive())) {
@@ -2214,6 +2256,7 @@ async function fetchServerStats() {
     // the server itself is alive: re-pair in place (the cert is unchanged).
     if (resp.status === 401) {
         console.warn('[stats] session no longer valid -> returning to pairing');
+        renderLinkQualityUnavailable();
         returnToPairing('Session expired. Please pair again.', false);
         return;
     }
@@ -2229,6 +2272,7 @@ async function fetchServerStats() {
     // buffer_ms is computed server-side from the actual capture rate (accurate for
     // non-48 kHz sources too).
     statBuffer.textContent = `${data.buffer_ms} ms`;
+    renderLinkQuality(pingMs, data);
 
     // Surface audio-output-device health: the server keeps decoding into the ring
     // buffer while a lost device's stream rebuilds, so there would otherwise be

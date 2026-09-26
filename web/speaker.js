@@ -4,7 +4,8 @@
    saved is reused here; the server gates /speaker-ws on it. */
 
 const $ = (id) => document.getElementById(id);
-const LS_VOL = 'spk_volume', LS_AUTOCONN = 'spk_autoconnect', LS_LAT = 'spk_latency';
+const LS_VOL = 'spk_volume', LS_AUTOCONN = 'spk_autoconnect', LS_LAT = 'spk_latency',
+  LS_SINK = 'spk_sink_id';
 
 // Jitter-buffer presets: frames of 20 ms audio held before playback starts.
 // More buffer = smoother on flaky Wi-Fi, at the cost of delay.
@@ -28,6 +29,67 @@ function setStatus(cls, text) {
 
 function token() {
   try { return localStorage.getItem('sessionToken') || ''; } catch (e) { return ''; }
+}
+
+// ── Output-device picker (Bluetooth earbuds etc.) ──────────────────────
+// Routes this page's audio through AudioContext.setSinkId (Chromium only;
+// iOS Safari has no setSinkId, so the picker hides itself there and audio
+// follows the system default). Labels need a media permission to be
+// non-empty — the Mic tab (same origin) grants it when the user pairs —
+// otherwise the list falls back to numbered entries that still work.
+
+// UI-level support: the API exists on the prototype and we can enumerate.
+function sinkSelectSupported() {
+  return !!(window.AudioContext &&
+    typeof AudioContext.prototype.setSinkId === 'function' &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.enumerateDevices === 'function');
+}
+
+// Fill the dropdown with the current audiooutput devices. Keeps the saved
+// choice selected when that device is still present.
+async function refreshSinkList() {
+  const row = $('sinkRow'), note = $('sinkUnsupported'), sel = $('sinkSel');
+  if (!sinkSelectSupported()) {
+    row.hidden = true;
+    note.hidden = false;
+    return;
+  }
+  row.hidden = false;
+  note.hidden = true;
+  let devices = [];
+  try {
+    devices = (await navigator.mediaDevices.enumerateDevices())
+      .filter((d) => d.kind === 'audiooutput');
+  } catch (e) { /* keep whatever list we had */ }
+  let saved = '';
+  try { saved = localStorage.getItem(LS_SINK) || ''; } catch (e) { /* noop */ }
+  sel.innerHTML = '';
+  const def = document.createElement('option');
+  def.value = '';
+  def.textContent = 'System default';
+  sel.appendChild(def);
+  devices.forEach((d, i) => {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label || ('Output device ' + (i + 1));
+    sel.appendChild(o);
+  });
+  const stillThere = Array.from(sel.options).some((o) => o.value === saved);
+  sel.value = stillThere ? saved : '';
+}
+
+// Apply a saved/chosen sink id to the live AudioContext. Best-effort: any
+// failure just keeps the default routing — it must never break the stream.
+async function applySinkId(deviceId) {
+  if (!ctx || typeof ctx.setSinkId !== 'function') return false;
+  try {
+    // Empty string = the default output device.
+    await ctx.setSinkId(deviceId || '');
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 function drawMeter(rms) {
@@ -94,6 +156,11 @@ async function connect() {
     gainNode.gain.value = volume;
     player.connect(gainNode);
     gainNode.connect(ctx.destination);
+    // Route to the user's chosen output device (e.g. Bluetooth earbuds).
+    // Best-effort: a failure keeps default routing and never breaks connect.
+    let savedSink = '';
+    try { savedSink = localStorage.getItem(LS_SINK) || ''; } catch (e) { /* noop */ }
+    if (savedSink) await applySinkId(savedSink);
     player.port.onmessage = (e) => {
       const d = e.data || {};
       if (typeof d.rms === 'number') drawMeter(d.rms);
@@ -196,6 +263,21 @@ function toggleTone() {
   });
   $('btnConnect').addEventListener('click', connect);
   $('btnTone').addEventListener('click', toggleTone);
+  // Output-device picker: populate now, re-populate when devices come and go
+  // (earbuds connected mid-session), apply live on change.
+  refreshSinkList();
+  if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+    navigator.mediaDevices.addEventListener('devicechange', () => { refreshSinkList(); });
+  }
+  $('sinkSel').addEventListener('change', async (e) => {
+    const id = e.target.value;
+    try { localStorage.setItem(LS_SINK, id); } catch (e2) { /* noop */ }
+    // Applies on the next connect when idle; live-switches while streaming.
+    if (live && ctx) {
+      const ok = await applySinkId(id);
+      if (!ok) setStatus('bad', 'could not switch output — staying on default');
+    }
+  });
   setStatus('', token() ? 'not connected' : 'pair on the Mic tab first');
   if (autoConn && token()) connect();
 })();

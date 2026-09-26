@@ -8,7 +8,9 @@ use eframe::egui;
 use eframe::egui::RichText;
 
 use super::app::GuiApp;
-use super::{db_to_linear, is_recommended_device, open_url, rotate_pin, Snapshot};
+use super::{
+    db_to_linear, is_recommended_device, open_url, rotate_pin, set_speaker_test_tone, Snapshot,
+};
 use crate::server::{
     GAIN_MAX, GAIN_MIN, LATENCY_THRESHOLD_MAX_MS, NOISE_GATE_MAX, NOISE_GATE_MIN,
     OUTPUT_VOLUME_MAX, OUTPUT_VOLUME_MIN,
@@ -41,7 +43,7 @@ fn status_dot(connected: bool) -> RichText {
 
 // ── Status ────────────────────────────────────────────────────────────────
 
-pub(super) fn status(_app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
+pub(super) fn status(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
     section(ui, "Microphone");
     egui::Grid::new("mic-grid")
         .num_columns(2)
@@ -123,6 +125,31 @@ pub(super) fn status(_app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             ui.label(status_dot(false));
             ui.label("Not running on this machine.");
         });
+    }
+    // Live test-tone switch: feed the Speaker tab a synthetic 440 Hz tone
+    // instead of system-audio capture, so the PC -> phone path can be
+    // verified without guessing. The poller mirrors the shared flag back
+    // into the snapshot within a tick, so a failed switch unflips the box
+    // on its own.
+    let mut tone = snap.speaker_test_tone;
+    let tone_box = ui
+        .add_enabled(
+            app.g.speaker_tx.is_some(),
+            egui::Checkbox::new(&mut tone, "Test tone (440 Hz)"),
+        )
+        .on_hover_text(
+            "Play a synthetic 440 Hz tone to the phone instead of capturing \
+             system audio. Toggle off to return to real capture.",
+        );
+    if tone_box.changed() {
+        match set_speaker_test_tone(&app.g, tone) {
+            Ok(()) => app.notify(if tone {
+                "Test tone on — the phone's Speaker tab should play 440 Hz."
+            } else {
+                "Test tone off — back to system-audio capture."
+            }),
+            Err(e) => app.notify(format!("Could not switch speaker source: {e:#}")),
+        }
     }
 
     section(ui, "Hear-yourself monitor");
