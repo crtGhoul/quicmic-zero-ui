@@ -65,6 +65,9 @@ pub struct GuiApp {
     pub(super) pin_visible: bool,
     /// Update-check opt-out checkbox (persisted to gui_prefs.json).
     pub(super) update_opt_out: bool,
+    /// Light/dark theme (persisted to gui_prefs.json). Drives the header
+    /// toggle and the Settings panel radio buttons.
+    pub(super) theme_mode: theme::ThemeMode,
     /// Transient feedback line shown at the bottom of the active panel.
     pub(super) status_msg: Option<(String, Instant)>,
     /// The latest snapshot, refreshed in `logic` and rendered in `ui`.
@@ -77,7 +80,9 @@ impl GuiApp {
         snap: Arc<parking_lot::Mutex<Snapshot>>,
         devices_refresh: Arc<AtomicBool>,
     ) -> Self {
-        let update_opt_out = super::load_prefs(&g.prefs_path).update_check_opt_out;
+        let prefs = super::load_prefs(&g.prefs_path);
+        let update_opt_out = prefs.update_check_opt_out;
+        let theme_mode = prefs.theme;
         // Prefill the fixed-name field when the server started with one.
         let rename_fixed_name = match &*g.mic_rename_mode.lock() {
             crate::mic_name::MicRenameMode::Fixed(name) => name.clone(),
@@ -94,6 +99,7 @@ impl GuiApp {
             rename_fixed_name,
             pin_visible: true,
             update_opt_out,
+            theme_mode,
             status_msg: None,
             snap_now: Snapshot::default(),
         }
@@ -107,6 +113,24 @@ impl GuiApp {
 
     pub(super) fn notify(&mut self, msg: impl Into<String>) {
         self.status_msg = Some((msg.into(), Instant::now()));
+    }
+
+    /// Switch the GUI theme now and persist the choice to gui_prefs.json.
+    /// Called from the header quick-toggle and the Settings panel.
+    pub(super) fn set_theme(&mut self, ctx: &egui::Context, mode: theme::ThemeMode) {
+        if self.theme_mode == mode {
+            return;
+        }
+        self.theme_mode = mode;
+        theme::apply_theme(ctx, mode);
+        let prefs = super::GuiPrefs {
+            update_check_opt_out: self.update_opt_out,
+            theme: mode,
+        };
+        match super::save_prefs(&self.g.prefs_path, &prefs) {
+            Ok(()) => self.notify(format!("Theme: {} — saved.", mode.label())),
+            Err(e) => self.notify(format!("Could not save theme: {e:#}")),
+        }
     }
 
     fn take_status_msg(&mut self) -> Option<String> {
@@ -173,7 +197,7 @@ impl eframe::App for GuiApp {
                 ui.vertical(|ui| {
                     ui.heading(
                         egui::RichText::new("QuicMic")
-                            .color(theme::TITLE)
+                            .color(theme::title())
                             .size(24.0),
                     );
                     ui.label(
@@ -209,6 +233,15 @@ impl eframe::App for GuiApp {
                         self.g.shutdown_requested.store(true, Ordering::SeqCst);
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
+                    // Quick theme toggle: label shows the mode it switches to.
+                    let next = self.theme_mode.toggle();
+                    let label = match next {
+                        theme::ThemeMode::Light => "☀ Light",
+                        theme::ThemeMode::Dark => "☾ Dark",
+                    };
+                    if ui.button(label).on_hover_text("Switch theme").clicked() {
+                        self.set_theme(&ctx, next);
+                    }
                 });
             });
             ui.add_space(4.0);
@@ -225,9 +258,9 @@ impl eframe::App for GuiApp {
                     let label = egui::RichText::new(tab.label())
                         .size(15.0)
                         .color(if selected {
-                            theme::ACCENT_TEXT
+                            theme::accent_text()
                         } else {
-                            theme::TEXT
+                            theme::text()
                         });
                     let btn = egui::Button::new(label)
                         .fill(if selected {

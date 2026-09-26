@@ -296,6 +296,10 @@ pub struct GuiPrefs {
     /// Skip the startup update check. Read by `main` before the check runs;
     /// the CLI flag and `QUICMIC_NO_UPDATE_CHECK` still take precedence.
     pub update_check_opt_out: bool,
+    /// Light/dark GUI theme. Defaults to Dark (the historical look);
+    /// `#[serde(default)]` keeps old prefs files parsing.
+    #[serde(default)]
+    pub theme: theme::ThemeMode,
 }
 
 pub fn prefs_path(data_dir: &Path) -> PathBuf {
@@ -596,8 +600,9 @@ pub fn run(g: GuiCtx) -> anyhow::Result<()> {
         "QuicMic",
         native_options,
         Box::new(move |cc| {
-            // QuicMic dark theme (visuals only) before anything renders.
-            theme::apply(&cc.egui_ctx);
+            // Saved theme (dark by default) before anything renders.
+            let prefs = load_prefs(&app.g.prefs_path);
+            theme::apply_theme(&cc.egui_ctx, prefs.theme);
             // Publish the live context so background watchers (Ctrl+C,
             // `/api/update`) can close the window from another thread.
             *app.egui_ctx_handle().lock() = Some(cc.egui_ctx.clone());
@@ -624,6 +629,16 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[test]
+    fn prefs_without_theme_default_to_dark() {
+        // Old gui_prefs.json files (before the theme toggle) must still
+        // parse, defaulting to the historical dark look.
+        let prefs: super::GuiPrefs =
+            serde_json::from_str(r#"{"update_check_opt_out":true}"#).unwrap();
+        assert!(prefs.update_check_opt_out);
+        assert_eq!(prefs.theme, super::theme::ThemeMode::Dark);
+    }
 
     #[test]
     fn qr_renders_square_bitmap_with_both_colors() {
