@@ -147,6 +147,12 @@ impl eframe::App for GuiApp {
         let snap = self.snap.lock().clone();
         self.refresh_qr(ctx, &snap.pin);
         self.snap_now = snap;
+        // A failed mic-test playback reports one-shot through the snapshot;
+        // surface it as a transient status line (notify just overwrites, so a
+        // repeated frame showing the same snapshot is harmless).
+        if let Some(err) = self.snap_now.mic_test_error.clone() {
+            self.notify(format!("Mic test failed: {err}"));
+        }
 
         // Live stats without burning CPU: repaint twice a second; input events
         // (clicks, typing) still repaint immediately.

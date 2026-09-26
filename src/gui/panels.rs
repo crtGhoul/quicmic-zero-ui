@@ -10,7 +10,8 @@ use eframe::egui::RichText;
 use super::app::GuiApp;
 use super::theme;
 use super::{
-    db_to_linear, is_recommended_device, open_url, rotate_pin, set_speaker_test_tone, Snapshot,
+    db_to_linear, is_recommended_device, open_url, rotate_pin, set_speaker_test_tone,
+    trigger_mic_test, Snapshot,
 };
 use crate::server::{
     GAIN_MAX, GAIN_MIN, LATENCY_THRESHOLD_MAX_MS, NOISE_GATE_MAX, NOISE_GATE_MIN,
@@ -126,6 +127,34 @@ pub(super) fn status(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             .weak()
             .small(),
         );
+        // Mic tester: play the last ~5 s of phone mic audio through this PC's own
+        // speakers, so the user hears exactly what the PC is receiving. Disabled
+        // until a phone is connected and audio has actually been captured — a
+        // click with no stream behind it is never a silent no-op.
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let label = if snap.mic_test_running {
+                "Testing mic…"
+            } else {
+                "🎤 Test mic (play last 5 s on PC speakers)"
+            };
+            let btn = ui
+                .add_enabled(snap.mic_test_ready, egui::Button::new(label))
+                .on_hover_text(
+                    "Play the last ~5 seconds of phone mic audio through this PC's \
+                     speakers, so you can hear what the PC is receiving. Disabled \
+                     until a phone is connected and mic audio has been captured.",
+                );
+            if btn.clicked() {
+                match trigger_mic_test(&app.g) {
+                    Ok(()) => app.notify("Playing back the last ~5 s of mic audio on the PC speakers…"),
+                    Err(e) => app.notify(format!("Mic test: {e:#}")),
+                }
+            }
+            if !snap.connected {
+                ui.label(RichText::new("connect a phone first").weak().small());
+            }
+        });
     });
 
     card_section(ui, "Speaker (PC → phone)", |ui| {

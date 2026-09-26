@@ -63,6 +63,12 @@ pub struct GuiCtx {
     pub speaker_generation: Arc<AtomicU64>,
     pub speaker_device: Arc<parking_lot::Mutex<Option<String>>>,
     pub monitor_present: bool,
+    /// True while a mic-test playback is in flight; the Status tab disables
+    /// the "Test mic" button meanwhile so playbacks can't overlap.
+    pub mic_test_running: Arc<AtomicBool>,
+    /// One-shot mic-test playback failure, written by the playback thread and
+    /// picked up by the poller to show once in the UI.
+    pub mic_test_error: Arc<parking_lot::Mutex<Option<String>>>,
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
     /// How the capture endpoint's display name is managed. Shared with the
     /// server so the Settings tab can switch auto/off/fixed at runtime; the
@@ -110,6 +116,13 @@ pub struct Snapshot {
     pub speaker_source: String,
     /// Live test-tone state (mirrors `GuiCtx::speaker_test_tone`).
     pub speaker_test_tone: bool,
+    /// "Test mic" button state: a phone is connected, audio has been captured,
+    /// and no playback is currently in flight.
+    pub mic_test_ready: bool,
+    /// A mic-test playback is currently playing on the PC speakers.
+    pub mic_test_running: bool,
+    /// One-shot mic-test playback failure, shown once then cleared.
+    pub mic_test_error: Option<String>,
     /// Noise gate in dB for display (-100 = off).
     pub noise_gate_db: f32,
     pub gain: f32,
@@ -147,6 +160,8 @@ pub struct PollInputs {
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
     pub monitor_present: bool,
+    pub mic_test_running: Arc<AtomicBool>,
+    pub mic_test_error: Arc<parking_lot::Mutex<Option<String>>>,
 }
 
 impl GuiCtx {
@@ -162,6 +177,8 @@ impl GuiCtx {
             applied_mic_name: self.applied_mic_name.clone(),
             update_status: self.update_status.clone(),
             monitor_present: self.monitor_present,
+            mic_test_running: self.mic_test_running.clone(),
+            mic_test_error: self.mic_test_error.clone(),
         }
     }
 }
@@ -375,6 +392,45 @@ pub fn set_speaker_test_tone(g: &GuiCtx, on: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Play back the last ~5 s of phone mic audio through the PC's default output
+/// device, so the user hears exactly what the PC is receiving. The "Test mic"
+/// button on the Status tab calls this.
+///
+/// Spawns a dedicated playback thread (the cpal stream is `!Send`) and
+/// returns immediately; the `mic_test_running` flag the poller mirrors keeps
+/// the button disabled while the clip plays, and a playback failure is
+/// reported one-shot through `mic_test_error`. The synchronous checks mean a
+/// click with no stream behind it is never a silent no-op — the caller gets a
+/// plain-language error to show.
+pub fn trigger_mic_test(g: &GuiCtx) -> anyhow::Result<()> {
+    if g.mic_test_running.load(Ordering::Relaxed) {
+        return Ok(()); // already playing; the button is disabled anyway
+    }
+    if !g.stream.is_connected.load(Ordering::Relaxed) {
+        anyhow::bail!("connect a phone first — no mic stream is active");
+    }
+    let samples = g.stream.test_capture.snapshot();
+    if samples.is_empty() {
+        anyhow::bail!("no mic audio captured yet — speak into the phone, then try again");
+    }
+    let source_rate = g.stream.source_sample_rate.load(Ordering::Relaxed);
+    let volume = f32::from_bits(g.stream.output_volume.load(Ordering::Relaxed));
+    g.mic_test_running.store(true, Ordering::Relaxed);
+    let running = g.mic_test_running.clone();
+    let err_slot = g.mic_test_error.clone();
+    std::thread::Builder::new()
+        .name("mic-test-playback".into())
+        .spawn(move || {
+            if let Err(e) = crate::audio::play_test_capture(samples, source_rate, volume) {
+                tracing::error!("mic test playback failed: {e:#}");
+                *err_slot.lock() = Some(format!("{e:#}"));
+            }
+            running.store(false, Ordering::Relaxed);
+        })
+        .map_err(|e| anyhow::anyhow!("couldn't start the playback thread: {e}"))?;
+    Ok(())
+}
+
 /// Spawn the 440 Hz test tone onto the speaker broadcast channel, stopping
 /// when the capture generation bumps. This is the runtime-toggle twin of
 /// `speaker::synth::spawn` (which the `--speaker-test-tone` CLI flag uses and
@@ -439,6 +495,12 @@ fn poll_snapshot(p: &PollInputs, devices_refresh: &AtomicBool, ticks: u64) -> Sn
         // No refresh this tick; the poller keeps the previous list.
         None
     };
+    // The "Test mic" button is only useful with a live stream behind it: a
+    // phone must be connected and at least one packet captured, and no
+    // playback may already be in flight.
+    let mic_test_ready = s.is_connected.load(Ordering::Relaxed)
+        && !p.mic_test_running.load(Ordering::Relaxed)
+        && s.test_capture.has_samples();
     Snapshot {
         connected: s.is_connected.load(Ordering::Relaxed),
         mic_peer: s.mic_peer.lock().clone(),
@@ -455,6 +517,10 @@ fn poll_snapshot(p: &PollInputs, devices_refresh: &AtomicBool, ticks: u64) -> Sn
         speaker_peers: s.speaker_peers.lock().clone(),
         speaker_running: p.speaker_running.load(Ordering::Relaxed),
         speaker_test_tone: p.speaker_test_tone.load(Ordering::Relaxed),
+        mic_test_ready,
+        mic_test_running: p.mic_test_running.load(Ordering::Relaxed),
+        // Take the one-shot playback error so the UI shows it exactly once.
+        mic_test_error: p.mic_test_error.lock().take(),
         speaker_source: if p.speaker_test_tone.load(Ordering::Relaxed) {
             "test tone (440 Hz)".to_string()
         } else {
@@ -551,7 +617,7 @@ fn window_icon() -> Option<eframe::egui::IconData> {
 #[cfg(test)]
 mod tests {
     use super::{db_to_linear, is_recommended_device, linear_to_db, render_qr_gray};
-    use super::{set_speaker_test_tone, GuiCtx};
+    use super::{set_speaker_test_tone, trigger_mic_test, GuiCtx};
     use crate::mic_name::MicRenameMode;
     use crate::server::StreamState;
     use std::path::PathBuf;
@@ -631,6 +697,7 @@ mod tests {
                 output_volume: Arc::new(AtomicU32::new(1f32.to_bits())),
                 monitor_ring: None,
                 monitor_enabled: Arc::new(AtomicBool::new(false)),
+                test_capture: Arc::new(crate::audio::MicTestBuffer::new()),
                 packets_received: Arc::new(AtomicU64::new(0)),
                 packets_lost: Arc::new(AtomicU64::new(0)),
                 source_sample_rate: Arc::new(AtomicU32::new(48000)),
@@ -652,6 +719,8 @@ mod tests {
             speaker_generation: Arc::new(AtomicU64::new(0)),
             speaker_device: Arc::new(parking_lot::Mutex::new(None)),
             monitor_present: false,
+            mic_test_running: Arc::new(AtomicBool::new(false)),
+            mic_test_error: Arc::new(parking_lot::Mutex::new(None)),
             phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
             mic_rename_mode: Arc::new(parking_lot::Mutex::new(MicRenameMode::Off)),
             applied_mic_name: Arc::new(parking_lot::Mutex::new(None)),
@@ -758,5 +827,73 @@ mod tests {
         while rx.try_recv().is_ok() {}
         std::thread::sleep(Duration::from_millis(150));
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn mic_test_needs_a_connected_phone() {
+        let g = test_ctx(None, false, false);
+        let err = trigger_mic_test(&g).expect_err("no phone connected: must fail loudly");
+        assert!(
+            err.to_string().contains("connect a phone first"),
+            "unexpected message: {err:#}"
+        );
+        assert!(!g.mic_test_running.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn mic_test_needs_captured_audio() {
+        let g = test_ctx(None, false, false);
+        g.stream.is_connected.store(true, Ordering::Relaxed);
+        // Connected, but the phone hasn't sent anything capturable yet.
+        assert!(!g.stream.test_capture.has_samples());
+        let err = trigger_mic_test(&g).expect_err("empty capture: must fail loudly");
+        assert!(
+            err.to_string().contains("no mic audio captured yet"),
+            "unexpected message: {err:#}"
+        );
+        assert!(!g.mic_test_running.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn mic_test_is_a_noop_while_already_playing() {
+        let g = test_ctx(None, false, false);
+        g.mic_test_running.store(true, Ordering::Relaxed);
+        // Must not spawn a second playback thread or touch the flag.
+        assert!(trigger_mic_test(&g).is_ok());
+        assert!(g.mic_test_running.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn poll_snapshot_reports_mic_test_readiness() {
+        use super::poll_snapshot;
+
+        let g = test_ctx(None, false, false);
+        let inputs = g.poll_inputs();
+        let no_refresh = AtomicBool::new(false);
+
+        // Idle: nothing connected, nothing captured.
+        let snap = poll_snapshot(&inputs, &no_refresh, 1);
+        assert!(!snap.mic_test_ready);
+        assert!(!snap.mic_test_running);
+        assert!(snap.mic_test_error.is_none());
+
+        // Connected with captured audio: ready.
+        g.stream.is_connected.store(true, Ordering::Relaxed);
+        g.stream.test_capture.push(&[1, 2, 3]);
+        let snap = poll_snapshot(&inputs, &no_refresh, 1);
+        assert!(snap.mic_test_ready);
+
+        // A playback in flight: not ready, button shows the playing state.
+        g.mic_test_running.store(true, Ordering::Relaxed);
+        let snap = poll_snapshot(&inputs, &no_refresh, 1);
+        assert!(!snap.mic_test_ready);
+        assert!(snap.mic_test_running);
+
+        // A one-shot playback error surfaces exactly once.
+        *g.mic_test_error.lock() = Some("no output device".to_string());
+        let snap = poll_snapshot(&inputs, &no_refresh, 1);
+        assert_eq!(snap.mic_test_error.as_deref(), Some("no output device"));
+        let snap = poll_snapshot(&inputs, &no_refresh, 1);
+        assert!(snap.mic_test_error.is_none());
     }
 }
