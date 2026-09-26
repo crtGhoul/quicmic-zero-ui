@@ -39,6 +39,9 @@
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".ui.DropActivity"
+            android:exported="false" />
 
         <service
             android:name=".service.QuicMicService"
