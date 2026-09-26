@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.io.File
+
 android {
     namespace = "com.quicmic.android"
     compileSdk = 34
@@ -15,8 +17,33 @@ android {
         versionName = "0.5.0"
     }
 
+    // Release signing: set these env vars when building a shippable APK.
+    //   QUICMIC_KEYSTORE_PATH     - path to the release keystore
+    //   QUICMIC_KEYSTORE_PASSWORD - keystore password
+    //   QUICMIC_KEY_ALIAS         - key alias (default "quicmic")
+    //   QUICMIC_KEY_PASSWORD      - key password (defaults to the keystore password)
+    // When unset, the release build falls back to the debug key (local dev only).
+    val releaseKeystore = System.getenv("QUICMIC_KEYSTORE_PATH")
+        ?.let { File(it) }
+        ?.takeIf { it.isFile }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("QUICMIC_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("QUICMIC_KEY_ALIAS") ?: "quicmic"
+                keyPassword = System.getenv("QUICMIC_KEY_PASSWORD")
+                    ?: System.getenv("QUICMIC_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -49,5 +76,5 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     // EncryptedSharedPreferences for token / PIN / pinned cert / settings.
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
 }
