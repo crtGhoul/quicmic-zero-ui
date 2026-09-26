@@ -831,6 +831,10 @@ async fn run() -> anyhow::Result<()> {
                                 // tray module (opens the browser); keep
                                 // listening for the next click.
                                 Some(tray::TrayAction::ShowQr) => {}
+                                // Console mode spawns the tray without the
+                                // window-toggle item, so this never arrives;
+                                // the arm is only here for exhaustiveness.
+                                Some(tray::TrayAction::ToggleWindow) => {}
                                 Some(tray::TrayAction::Quit) => return true,
                                 None => return false,
                             }
@@ -915,10 +919,15 @@ async fn run_gui_mode(
     // runs after `gui::run` returns, on this task.
     let shutdown_requested = g.shutdown_requested.clone();
     let egui_ctx = g.egui_ctx.clone();
-    let close_window = move || {
-        shutdown_requested.store(true, Ordering::SeqCst);
-        if let Some(ctx) = egui_ctx.lock().clone() {
-            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+    let close_window = {
+        // The closure takes its own clone so the outer `egui_ctx` stays
+        // usable for the Windows tray task below.
+        let egui_ctx = egui_ctx.clone();
+        move || {
+            shutdown_requested.store(true, Ordering::SeqCst);
+            if let Some(ctx) = egui_ctx.lock().clone() {
+                ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+            }
         }
     };
 
