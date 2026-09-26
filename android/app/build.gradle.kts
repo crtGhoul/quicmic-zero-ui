@@ -22,7 +22,8 @@ android {
     //   QUICMIC_KEYSTORE_PASSWORD - keystore password
     //   QUICMIC_KEY_ALIAS         - key alias (default "quicmic")
     //   QUICMIC_KEY_PASSWORD      - key password (defaults to the keystore password)
-    // When unset, the release build falls back to the debug key (local dev only).
+    // When unset, no release signing config is created and assembleRelease
+    // produces an unsigned APK (local devs: use the debug build instead).
     val releaseKeystore = System.getenv("QUICMIC_KEYSTORE_PATH")
         ?.let { File(it) }
         ?.takeIf { it.isFile }
