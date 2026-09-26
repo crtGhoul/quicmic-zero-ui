@@ -439,6 +439,124 @@ fn open_output_stream(
     Ok(stream)
 }
 
+/// Play a captured mic-test buffer through the PC's default output device, then
+/// return. One-shot: it builds a cpal stream, drains `samples` through the
+/// same Catmull-Rom resampler (`write_data`) the live output streams use, and
+/// tears the stream down — no new audio backend, just the existing native
+/// output path.
+///
+/// The device comes from `find_monitor_device(None)`: the system default
+/// output, deliberately *not* the virtual-cable mic device (playing the mic
+/// back into the cable would just duplicate it into every app instead of
+/// letting the user hear it). `source_sample_rate` is the phone's capture
+/// rate so the resampler ratio is right; `output_volume` is the shared
+/// PC-side volume multiplier.
+///
+/// Blocks until the buffer has played out, the device errors, or a generous
+/// timeout elapses. The cpal `Stream` is `!Send`, so call this on a dedicated
+/// thread (the GUI's "Test mic" button spawns one per click).
+pub fn play_test_capture(
+    samples: Vec<i16>,
+    source_sample_rate: u32,
+    output_volume: f32,
+) -> anyhow::Result<()> {
+    if samples.is_empty() {
+        anyhow::bail!("nothing captured yet — speak into the phone, then try again");
+    }
+    let total = samples.len();
+    let device = find_monitor_device(None)?;
+    let default_config = device.default_output_config()?;
+    let sample_format = default_config.sample_format();
+    let config: StreamConfig = default_config.into();
+
+    let device_name = device
+        .description()
+        .map(|desc| desc.name().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+    info!(device = %device_name, samples = total, "Playing mic-test capture");
+
+    // Stage the whole capture in a ring up front; the callback drains it
+    // through the shared resampler. Nothing else ever produces into this
+    // ring, so "ring empty" unambiguously means "playback finished".
+    let ring = Arc::new(RingBuffer::new(total));
+    ring.push(&samples);
+    drop(samples);
+
+    // Guard against a (pathological) zero-channel device: chunks_mut(0) panics.
+    let channels = (config.channels as usize).max(1);
+    let target_rate = config.sample_rate as f64;
+    let source_rate = source_sample_rate.max(1) as f64;
+
+    let (done_tx, done_rx) = mpsc::channel::<anyhow::Result<()>>();
+
+    // Same shape as `open_output_stream`'s builder, minus the supervisor
+    // machinery (no latency recovery, no monitor gate — this is a fixed,
+    // finite buffer, not a live stream).
+    macro_rules! build_test_stream {
+        ($T:ty) => {{
+            let ring = ring.clone();
+            let ok_tx = done_tx.clone();
+            let err_tx = done_tx.clone();
+            let mut resampler = ResamplerState::new();
+            let mut finished = false;
+            device.build_output_stream(
+                config,
+                move |data: &mut [$T], _: &cpal::OutputCallbackInfo| {
+                    // Prebuffer 0: everything is staged already, so playback
+                    // starts on the first callback.
+                    let ratio = source_rate / target_rate;
+                    write_data(
+                        data,
+                        &ring,
+                        channels,
+                        ratio,
+                        0,
+                        output_volume,
+                        &mut resampler,
+                    );
+                    if !finished && ring.len() == 0 {
+                        finished = true;
+                        let _ = ok_tx.send(Ok(()));
+                    }
+                },
+                move |err| {
+                    let _ = err_tx.send(Err(anyhow::anyhow!(
+                        "mic-test playback stream error: {err}"
+                    )));
+                },
+                None,
+            )
+        }};
+    }
+
+    let stream = match sample_format {
+        SampleFormat::F32 => build_test_stream!(f32),
+        SampleFormat::I16 => build_test_stream!(i16),
+        SampleFormat::U16 => build_test_stream!(u16),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Unsupported sample format: {:?}",
+                sample_format
+            ));
+        }
+    }?;
+    stream.play()?;
+
+    // A 5 s capture plays out in ~5 s; 30 s is plenty of headroom for slow
+    // device startup without hanging the playback thread forever.
+    match done_rx.recv_timeout(Duration::from_secs(30)) {
+        Ok(Ok(())) => {
+            info!("Mic-test capture finished playing");
+            Ok(())
+        }
+        Ok(Err(e)) => Err(e),
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(anyhow::anyhow!("mic-test playback timed out")),
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err(anyhow::anyhow!("mic-test playback ended unexpectedly"))
+        }
+    }
+}
+///
 /// Spawn the audio output supervisor.
 ///
 /// It owns the cpal stream — which is `!Send`, so it must live on a single thread
