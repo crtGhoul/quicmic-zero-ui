@@ -36,5 +36,4 @@ THIRD-PARTY-LICENSES.html
 CLAUDE.local.md
 # Android (Gradle) local build outputs — never commit
 android/.gradle/
-android/**/build/
-android/local.properties
+

@@ -9,17 +9,11 @@ cargo-dist-version = "0.32.0"
 ci = "github"
 # The installers to generate for each app
 installers = []
-# Target platforms to build apps for (Rust target-triple syntax): x86_64 + arm64
-# for Linux, Windows, and macOS. The lock-free ring buffer and resampler are
-# already tuned for weak-memory-model (ARM) CPUs, so arm64 is a first-class target
-# across all three OSes. cargo-dist picks current runners per target (e.g.
-# macos-15-intel for x86_64 macOS).
+# Target platforms to build apps for (Rust target-triple syntax).
+# Windows x86_64 only: this is the PC the app actually runs on. Releases stay
+# lean on purpose — just the Windows build (plus the Android APK and bare .exe,
+# which are attached to the release by hand afterwards).
 targets = [
-    "aarch64-apple-darwin",
-    "aarch64-pc-windows-msvc",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
-    "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
 ]
 # Where to host releases
@@ -41,15 +35,8 @@ aarch64-pc-windows-msvc = "windows-11-arm"
 [dist.dependencies.apt]
 libasound2-dev = '*'
 
-# Generate the third-party license attribution (cargo-about) and attach it to the
-# GitHub Release as an asset.
-[[dist.extra-artifacts]]
-artifacts = ["THIRD-PARTY-LICENSES.html"]
-build = [
-    "sh",
-    "-c",
-    "cargo install cargo-about --locked --features cli && cargo about generate about.hbs -o THIRD-PARTY-LICENSES.html",
-]
+# (No extra artifacts: releases stay lean — just the Windows build. The Android
+# APK and the bare updater .exe are attached to the release by hand.)
 
 # The generated caller grants the publish job only `id-token`/`packages`, and any scope
 # left out of a job's `permissions:` block defaults to `none` — which would leave
