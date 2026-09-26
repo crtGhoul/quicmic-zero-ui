@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Defense in depth: the app only ever talks https:// and wss:// (the
+     self-signed server cert is pinned at pairing). Cleartext is explicitly
+     forbidden so no future code path can silently downgrade to http://. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

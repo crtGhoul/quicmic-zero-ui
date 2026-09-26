@@ -221,6 +221,7 @@ mod tests {
             output_volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             monitor_ring: None,
             monitor_enabled: Arc::new(AtomicBool::new(false)),
+            test_capture: Arc::new(crate::audio::MicTestBuffer::new()),
             packets_received: Arc::new(AtomicU64::new(0)),
             packets_lost: Arc::new(AtomicU64::new(0)),
             source_sample_rate: Arc::new(AtomicU32::new(48_000)),
