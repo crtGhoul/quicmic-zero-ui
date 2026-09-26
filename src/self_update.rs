@@ -3,10 +3,16 @@
 //! Flow: read a GitHub token (`QUICMIC_GITHUB_TOKEN` env var, or
 //! `github_token.txt` next to the exe) → ask the GitHub API for the private
 //! repo's latest release → compare against the running version → download the
-//! `.exe` asset next to the running exe → write a small updater batch file →
-//! spawn it detached → the console quits gracefully; the batch waits for our
-//! PID to exit, swaps the new exe over the old one, restarts it with the same
-//! arguments, and deletes itself.
+//! `.exe` asset next to the running exe → download the release's published
+//! `<exe>.sha256` checksum asset → verify the exe's SHA-256 against it →
+//! write a small updater batch file → spawn it detached → the console quits
+//! gracefully; the batch waits for our PID to exit, swaps the new exe over
+//! the old one, restarts it with the same arguments, and deletes itself.
+//!
+//! Integrity is fail-closed: a missing/unparsable checksum asset or a digest
+//! mismatch aborts the update with a clear error — the running exe is never
+//! replaced by bytes we haven't verified. The old PE magic-byte heuristic
+//! remains as a defense-in-depth sanity check, not as the gate.
 //!
 //! No HTTP-client crate is pulled in: like [`crate::update_check`], this
 //! reuses the crate's existing TLS stack (`rustls` + `ring` + the OS trust
@@ -17,6 +23,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use ring::digest::{digest, SHA256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::update_check;
@@ -34,11 +41,15 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 /// Where the token lives if not given via env.
 const TOKEN_FILE: &str = "github_token.txt";
 
-/// A release worth installing: its tag plus the `.exe` asset's API URL.
+/// A release worth installing: its tag plus the `.exe` asset's API URL and
+/// the API URL of its published `<exe>.sha256` checksum asset. The checksum
+/// URL is required, not optional — a release without one is refused outright
+/// (fail closed) rather than installed on magic bytes alone.
 pub struct ReleaseInfo {
     pub tag: String,
     pub asset_name: String,
     pub asset_api_url: String,
+    pub checksum_api_url: String,
 }
 
 /// GitHub token for the private repo: env var wins, then `github_token.txt`
@@ -119,13 +130,43 @@ pub async fn run_update() -> anyhow::Result<bool> {
     );
     let exe = std::env::current_exe()?;
     let dest = exe.with_extension("exe.new");
-    let bytes = tokio::time::timeout(
+    let bytes = tokio::time::timeout(DOWNLOAD_TIMEOUT, download_asset(&rel.asset_api_url, &token))
+        .await
+        .map_err(|_| anyhow::anyhow!("download timed out"))??;
+    println!("Downloaded {:.1} MB.", bytes.len() as f64 / 1_048_576.0);
+
+    // Integrity gate: fetch the release's published checksum file and verify
+    // the exe against it *before* anything is written to disk. Any failure
+    // here — missing asset, unparsable file, digest mismatch — aborts the
+    // update; the running exe is never touched.
+    let sum_bytes = tokio::time::timeout(
         DOWNLOAD_TIMEOUT,
-        download_asset(&rel.asset_api_url, &token, &dest),
+        download_asset(&rel.checksum_api_url, &token),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("download timed out"))??;
-    println!("Downloaded {:.1} MB.", bytes as f64 / 1_048_576.0);
+    .map_err(|_| anyhow::anyhow!("checksum download timed out"))??;
+    let sum_text = std::str::from_utf8(&sum_bytes).map_err(|_| {
+        anyhow::anyhow!("checksum file is not valid UTF-8 — not staging the update")
+    })?;
+    let expected = select_digest(&parse_checksum_file(sum_text)?, &rel.asset_name)?;
+    if !verify_sha256(&bytes, &expected) {
+        anyhow::bail!(
+            "SHA-256 mismatch for {} — the download is corrupt or tampered with; not staging it",
+            rel.asset_name
+        );
+    }
+    println!("SHA-256 verified.");
+
+    // Defense in depth: the checksum is the gate, but keep the old magic-byte
+    // sanity check too — a verified exe that isn't a PE would be bizarre and
+    // worth refusing loudly.
+    if !looks_like_pe(&bytes) {
+        anyhow::bail!(
+            "downloaded asset passed its checksum but is not a Windows executable ({} bytes, no MZ header) — not staging it",
+            bytes.len()
+        );
+    }
+    std::fs::write(&dest, &bytes)?;
 
     #[cfg(windows)]
     {
@@ -176,10 +217,33 @@ async fn latest_release(token: &str) -> anyhow::Result<ReleaseInfo> {
         .and_then(|a| a.as_array())
         .and_then(|assets| pick_exe_asset(assets))
         .ok_or_else(|| anyhow::anyhow!("latest release has no .exe asset"))?;
+    // The checksum asset is mandatory: without it we cannot verify the exe,
+    // so the update is refused here rather than halfway through the download.
+    // Release process note: whenever the bare exe is attached to a release by
+    // hand, its `<exe>.sha256` (e.g. `sha256sum quicmic.exe > quicmic.exe.sha256`)
+    // must be attached next to it, or the updater will decline to install it.
+    let checksum_name = format!("{asset_name}.sha256");
+    let checksum_api_url = v
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|assets| {
+            assets.iter().find_map(|a| {
+                if a.get("name")?.as_str()? != checksum_name {
+                    return None;
+                }
+                Some(a.get("url")?.as_str()?.to_string())
+            })
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "latest release has no {checksum_name} checksum asset — refusing to self-update"
+            )
+        })?;
     Ok(ReleaseInfo {
         tag,
         asset_name,
         asset_api_url,
+        checksum_api_url,
     })
 }
 
@@ -207,11 +271,114 @@ fn looks_like_pe(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == b'M' && bytes[1] == b'Z'
 }
 
+/// SHA-256 of `bytes` as lowercase hex, via the crate's pinned `ring`
+/// provider (no new crypto dependency). Pure, so it is unit-testable.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let d = digest(&SHA256, bytes);
+    let mut out = String::with_capacity(64);
+    for b in d.as_ref() {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
+/// Compare `bytes` against an expected hex digest (case-insensitive). Pure.
+/// The digest is public data, so a plain comparison is fine — there is no
+/// secret here to protect with constant-time compare.
+fn verify_sha256(bytes: &[u8], expected_hex: &str) -> bool {
+    sha256_hex(bytes) == expected_hex.to_ascii_lowercase()
+}
+
+/// One parsed line of a `.sha256` checksum file.
+struct ChecksumEntry {
+    digest: String,
+    file_name: Option<String>,
+}
+
+/// Parse a `.sha256` checksum file into entries. Accepts the formats
+/// `cargo-dist` / `sha256sum` produce:
+///   `<hex>`                    (bare digest)
+///   `<hex>  <file>`            (coreutils text/binary mode)
+///   `SHA256 (<file>) = <hex>`  (BSD tag form)
+/// `#` comments and blank lines are ignored. An unrecognized line is an
+/// error, not a skip — a checksum file we cannot fully parse must never be
+/// treated as "no checksum". Pure, so it is unit-testable.
+fn parse_checksum_file(text: &str) -> anyhow::Result<Vec<ChecksumEntry>> {
+    let mut entries = Vec::new();
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        entries.push(parse_checksum_line(line).ok_or_else(|| {
+            anyhow::anyhow!(
+                "checksum file line {} is not a recognized format: {line:?}",
+                i + 1
+            )
+        })?);
+    }
+    if entries.is_empty() {
+        anyhow::bail!("checksum file has no usable entries");
+    }
+    Ok(entries)
+}
+
+fn parse_checksum_line(line: &str) -> Option<ChecksumEntry> {
+    // BSD tag form: SHA256 (name) = <hex>
+    if let Some(rest) = line.strip_prefix("SHA256 (") {
+        let (name, rest) = rest.split_once(") =")?;
+        return valid_digest(rest.trim()).map(|digest| ChecksumEntry {
+            digest,
+            file_name: Some(name.trim().to_string()),
+        });
+    }
+    // coreutils: `<hex>[* ]name`, or a bare `<hex>`.
+    let mut parts = line.split_whitespace();
+    let digest = valid_digest(parts.next()?)?;
+    let file_name = parts.next().map(|n| n.trim_start_matches('*').to_string());
+    if parts.next().is_some() {
+        return None; // trailing junk — not a format we understand
+    }
+    Some(ChecksumEntry { digest, file_name })
+}
+
+/// A digest is exactly 64 hex chars; normalized to lowercase.
+fn valid_digest(s: &str) -> Option<String> {
+    (s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())).then(|| s.to_ascii_lowercase())
+}
+
+/// Pick the expected digest for `asset_name` from the parsed entries: prefer
+/// an entry that names the asset (compared on the last path component, so
+/// `subdir/quicmic.exe` still matches), otherwise accept a single bare entry.
+/// Anything ambiguous fails closed. Pure, so it is unit-testable.
+fn select_digest(entries: &[ChecksumEntry], asset_name: &str) -> anyhow::Result<String> {
+    let base = asset_name.rsplit(['/', '\\']).next().unwrap_or(asset_name);
+    if let Some(e) = entries.iter().find(|e| {
+        e.file_name
+            .as_ref()
+            .is_some_and(|n| n.rsplit(['/', '\\']).next().unwrap_or(n.as_str()) == base)
+    }) {
+        return Ok(e.digest.clone());
+    }
+    match entries
+        .iter()
+        .filter(|e| e.file_name.is_none())
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [e] => Ok(e.digest.clone()),
+        _ => anyhow::bail!(
+            "checksum file does not identify {asset_name} unambiguously — refusing to update"
+        ),
+    }
+}
+
 /// Download an asset API URL, following redirects (the API 302s to a signed
 /// `objects.githubusercontent.com` URL). The token is only sent to
-/// `api.github.com`, never to the redirect target. The asset is small enough
-/// (~8 MB) to hold in memory, then written to `dest` in one go.
-async fn download_asset(api_url: &str, token: &str, dest: &Path) -> anyhow::Result<u64> {
+/// `api.github.com`, never to the redirect target. Returns the raw bytes —
+/// the caller decides what integrity checks to run before writing anything
+/// to disk. The asset is small enough (~8 MB) to hold in memory.
+async fn download_asset(api_url: &str, token: &str) -> anyhow::Result<Vec<u8>> {
     let mut url = api_url.to_string();
     for _ in 0..5 {
         let (host, path) = split_url(&url)?;
@@ -221,20 +388,7 @@ async fn download_asset(api_url: &str, token: &str, dest: &Path) -> anyhow::Resu
         }
         let resp = https_get(&host, &path, &headers).await?;
         match resp.status {
-            200 => {
-                let body = decode_body(&resp)?;
-                // Never stage something that isn't an executable: a truncated
-                // download or a mis-served error page must fail here, loudly,
-                // rather than replace the working exe with garbage.
-                if !looks_like_pe(&body) {
-                    anyhow::bail!(
-                        "downloaded asset is not a Windows executable ({} bytes, no MZ header) — not staging it",
-                        body.len()
-                    );
-                }
-                std::fs::write(dest, &body)?;
-                return Ok(body.len() as u64);
-            }
+            200 => return decode_body(&resp),
             301 | 302 | 303 | 307 | 308 => {
                 url = resp
                     .header("location")
@@ -557,5 +711,121 @@ mod tests {
             body: b"abc".to_vec(),
         };
         assert_eq!(decode_body(&resp).unwrap(), b"abc");
+    }
+
+    #[test]
+    fn sha256_hex_matches_known_vectors() {
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn verify_sha256_accepts_match_and_rejects_tamper() {
+        let good = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert!(verify_sha256(b"abc", good));
+        // Case-insensitive on the expected side.
+        assert!(verify_sha256(b"abc", &good.to_ascii_uppercase()));
+        // One flipped byte fails.
+        assert!(!verify_sha256(b"abd", good));
+        assert!(!verify_sha256(b"", good));
+    }
+
+    #[test]
+    fn parse_checksum_file_accepts_known_formats() {
+        let text = "# cargo-dist style, coreutils-compatible\n\
+                    ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  quicmic.exe\n\
+                    \n\
+                    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *other.bin\n";
+        let entries = parse_checksum_file(text).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(entries[0].file_name.as_deref(), Some("quicmic.exe"));
+        assert_eq!(entries[1].file_name.as_deref(), Some("other.bin"));
+
+        // Bare digest.
+        let bare = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD\n";
+        let entries = parse_checksum_file(bare).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(entries[0].file_name, None);
+
+        // BSD tag form.
+        let bsd = "SHA256 (quicmic.exe) = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\n";
+        let entries = parse_checksum_file(bsd).unwrap();
+        assert_eq!(entries[0].file_name.as_deref(), Some("quicmic.exe"));
+    }
+
+    #[test]
+    fn parse_checksum_file_rejects_garbage() {
+        assert!(parse_checksum_file("not a checksum\n").is_err());
+        assert!(parse_checksum_file("").is_err());
+        assert!(parse_checksum_file("# only a comment\n\n").is_err());
+        // Truncated hex.
+        assert!(parse_checksum_file("ba7816bf  quicmic.exe\n").is_err());
+        // Trailing junk after the filename.
+        assert!(parse_checksum_file(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad quicmic.exe extra\n"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn select_digest_prefers_name_match_then_bare() {
+        let entries = parse_checksum_file(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  other.exe\n\
+             ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  quicmic.exe\n",
+        )
+        .unwrap();
+        assert_eq!(
+            select_digest(&entries, "quicmic.exe").unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        // Entry naming a subdirectory still matches on the file name.
+        let entries = parse_checksum_file(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  dist/quicmic.exe\n",
+        )
+        .unwrap();
+        assert_eq!(
+            select_digest(&entries, "quicmic.exe").unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        // A single bare digest is accepted when nothing is named.
+        let entries = parse_checksum_file(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\n",
+        )
+        .unwrap();
+        assert_eq!(
+            select_digest(&entries, "quicmic.exe").unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn select_digest_fails_closed_when_ambiguous() {
+        // Named entries, none of them ours.
+        let entries = parse_checksum_file(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  other.exe\n",
+        )
+        .unwrap();
+        assert!(select_digest(&entries, "quicmic.exe").is_err());
+        // Two bare digests — can't tell which is ours.
+        let entries = parse_checksum_file(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\
+             bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+        )
+        .unwrap();
+        assert!(select_digest(&entries, "quicmic.exe").is_err());
     }
 }
