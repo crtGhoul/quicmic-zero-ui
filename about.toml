@@ -40,4 +40,10 @@ accepted = [
     "BSL-1.0",
     "Unlicense",
     "GPL-3.0-or-later",
+    # Font licenses: eframe bundles its default UI fonts
+    # (epaint_default_fonts), whose license expression is
+    # "(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0". Both permit
+    # redistribution with attribution, which THIRD-PARTY-LICENSES.html provides.
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
 ]
