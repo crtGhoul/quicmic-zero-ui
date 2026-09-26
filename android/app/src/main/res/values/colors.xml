@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Brand (kept) -->
     <color name="quicmic_green">#4ADE80</color>
     <color name="quicmic_bg">#1B2430</color>
+
+    <!-- Dark theme surfaces -->
+    <color name="bg">#0B0B10</color>
+    <color name="card">#1E1E24</color>
+    <color name="card_pressed">#2B2B33</color>
+    <color name="card_disabled">#141419</color>
+    <color name="field">#16161C</color>
+    <color name="field_stroke">#2A2A32</color>
+    <color name="divider">#232329</color>
+
+    <!-- Text -->
+    <color name="text_primary">#F2F2F5</color>
+    <color name="text_muted">#9A9AA3</color>
+
+    <!-- Accents -->
+    <color name="accent_red">#E5484D</color>
+    <color name="accent_red_dark">#5C2A30</color>
+    <color name="accent_green_dark">#1E5B3A</color>
+
+    <!-- VU meter -->
+    <color name="vu_track">#232329</color>
+    <color name="vu_start">#2E9E5B</color>
+    <color name="vu_end">#7DF0A8</color>
 </resources>

@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var levelBar: ProgressBar
     private lateinit var btnStartStop: Button
     private lateinit var btnMute: Button
+    private lateinit var btnFiles: Button
     private lateinit var swSpeaker: Switch
     private lateinit var swBt: Switch
 
@@ -64,11 +65,13 @@ class MainActivity : AppCompatActivity() {
         levelBar = findViewById(R.id.level_bar)
         btnStartStop = findViewById(R.id.btn_start_stop)
         btnMute = findViewById(R.id.btn_mute)
+        btnFiles = findViewById(R.id.btn_files)
         swSpeaker = findViewById(R.id.sw_speaker)
         swBt = findViewById(R.id.sw_bt)
 
         btnStartStop.setOnClickListener { toggleStreaming() }
         btnMute.setOnClickListener { sendServiceAction(QuicMicService.ACTION_TOGGLE_MUTE) }
+        btnFiles.setOnClickListener { openDrop() }
         findViewById<Button>(R.id.btn_pair).setOnClickListener {
             startActivity(Intent(this, PairActivity::class.java))
         }
@@ -107,9 +110,26 @@ class MainActivity : AppCompatActivity() {
         btnStartStop.text = if (streaming) "Stop" else "Start"
         btnMute.text = if (muted) "Unmute" else "Mute"
         btnMute.isEnabled = streaming
+        btnFiles.isEnabled = store.isPaired
+        // Visual state for the primary action: red while streaming (Stop),
+        // green while idle (Start). Tints the card background + ring icon.
+        val bgTint = if (streaming) R.color.accent_red_dark else R.color.accent_green_dark
+        val iconTint = if (streaming) R.color.accent_red else R.color.quicmic_green
+        btnStartStop.backgroundTintList = ContextCompat.getColorStateList(this, bgTint)
+        btnStartStop.compoundDrawableTintList = ContextCompat.getColorStateList(this, iconTint)
         if (!store.isPaired) {
             tvStatus.text = "Not paired — tap Pair and scan the PC's QR code"
         }
+    }
+
+    /** Open the PC's Drop file-sharing page in the pinned in-app browser. */
+    private fun openDrop() {
+        if (!store.isPaired) {
+            toast("Pair with the PC first")
+            startActivity(Intent(this, PairActivity::class.java))
+            return
+        }
+        startActivity(Intent(this, DropActivity::class.java))
     }
 
     private fun toggleStreaming() {
