@@ -242,8 +242,7 @@ class SpeakerPlayer(
     ) {
         val latch = java.util.concurrent.CountDownLatch(1)
         val opened = java.util.concurrent.atomic.AtomicBoolean(false)
-        @Volatile
-        var failure: Throwable? = null
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         val listener = object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 opened.set(true)
@@ -268,11 +267,11 @@ class SpeakerPlayer(
                 if (opened.get()) {
                     dead.set(true)
                 } else {
-                    failure = when (response?.code) {
+                    failure.set(when (response?.code) {
                         401 -> SessionExpiredException("server rejected the token (401)")
                         503 -> IOException("speaker capture is not running on this PC (503)")
                         else -> IOException("speaker socket failed: ${t.message} (http=${response?.code})")
-                    }
+                    })
                     latch.countDown()
                 }
             }
@@ -286,7 +285,7 @@ class SpeakerPlayer(
             }
             throw IOException("speaker socket open timed out")
         }
-        failure?.let { throw it }
+        failure.get()?.let { throw it }
         socket = ws
         socketDead = dead
     }
