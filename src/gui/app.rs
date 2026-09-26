@@ -159,7 +159,7 @@ impl eframe::App for GuiApp {
         // ── Top bar ────────────────────────────────────────────────
         egui::Panel::top("topbar").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("QuicMic");
+                ui.heading(egui::RichText::new("QuicMic").color(super::theme::TITLE));
                 ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 let (dot, text) = if snap.connected {
@@ -200,8 +200,22 @@ impl eframe::App for GuiApp {
                 ui.add_space(8.0);
                 for tab in Tab::all() {
                     let selected = self.tab == tab;
+                    let label = egui::RichText::new(tab.label())
+                        .size(15.0)
+                        .color(if selected {
+                            super::theme::ACCENT_TEXT
+                        } else {
+                            super::theme::TEXT
+                        });
+                    let btn = egui::Button::new(label)
+                        .fill(if selected {
+                            super::theme::accent_dim()
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        })
+                        .corner_radius(8.0);
                     if ui
-                        .selectable_label(selected, format!("  {}", tab.label()))
+                        .add_sized(egui::vec2(ui.available_width(), 36.0), btn)
                         .clicked()
                     {
                         self.tab = tab;
@@ -210,7 +224,7 @@ impl eframe::App for GuiApp {
                             self.devices_refresh.store(true, Ordering::Relaxed);
                         }
                     }
-                    ui.add_space(2.0);
+                    ui.add_space(4.0);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(8.0);

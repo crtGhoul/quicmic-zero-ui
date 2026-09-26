@@ -28,9 +28,14 @@ fn copy_row(ui: &mut egui::Ui, label: &str, value: &str) {
 }
 
 fn section(ui: &mut egui::Ui, title: &str) {
-    ui.add_space(6.0);
-    ui.heading(RichText::new(title).size(16.0));
-    ui.add_space(2.0);
+    ui.add_space(10.0);
+    ui.heading(
+        egui::RichText::new(title)
+            .size(17.0)
+            .strong()
+            .color(super::theme::HEADING),
+    );
+    ui.add_space(4.0);
 }
 
 fn status_dot(connected: bool) -> RichText {
