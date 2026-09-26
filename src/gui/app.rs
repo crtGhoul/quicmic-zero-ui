@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use super::panels;
+use super::theme;
 use super::{GuiCtx, Snapshot};
 
 /// The five GUI screens, mirroring the console's command groups.
@@ -162,25 +163,38 @@ impl eframe::App for GuiApp {
         let ctx = ui.ctx().clone();
         let snap = self.snap_now.clone();
 
-        // ── Top bar ────────────────────────────────────────────────
+        // ── Header card: mic tile, title, connection pill ─────────────
         egui::Panel::top("topbar").show(ui, |ui| {
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.heading("QuicMic");
-                ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
-                ui.separator();
-                let (dot, text) = if snap.connected {
+                ui.add_space(6.0);
+                theme::mic_tile(ui, 40.0);
+                ui.add_space(6.0);
+                ui.vertical(|ui| {
+                    ui.heading(
+                        egui::RichText::new("QuicMic")
+                            .color(theme::TITLE)
+                            .size(24.0),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                            .weak()
+                            .small(),
+                    );
+                });
+                ui.add_space(12.0);
+                if snap.connected {
                     let who = snap
                         .phone_name
                         .clone()
                         .or(snap.mic_peer.clone())
                         .unwrap_or_else(|| "phone".to_string());
-                    ("🟢", format!("Connected: {who}"))
+                    theme::status_pill(ui, true, &format!("Connected: {who}"));
                 } else {
-                    ("🔴", "Waiting for phone…".to_string())
-                };
-                ui.label(format!("{dot} {text}"));
+                    theme::status_pill(ui, false, "Waiting for phone…");
+                }
                 if let Some(tag) = &snap.update_available {
-                    ui.separator();
+                    ui.add_space(8.0);
                     if ui
                         .link(format!("⬆ Update {tag} available"))
                         .on_hover_text("Open the Settings tab to install")
@@ -190,24 +204,40 @@ impl eframe::App for GuiApp {
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(6.0);
                     if ui.button("⏻ Quit").clicked() {
                         self.g.shutdown_requested.store(true, Ordering::SeqCst);
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
             });
+            ui.add_space(4.0);
         });
 
         // ── Left nav ───────────────────────────────────────────────
         egui::Panel::left("nav")
             .resizable(false)
-            .default_size(150.0)
+            .default_size(160.0)
             .show(ui, |ui| {
-                ui.add_space(8.0);
+                ui.add_space(10.0);
                 for tab in Tab::all() {
                     let selected = self.tab == tab;
+                    let label = egui::RichText::new(tab.label())
+                        .size(15.0)
+                        .color(if selected {
+                            theme::ACCENT_TEXT
+                        } else {
+                            theme::TEXT
+                        });
+                    let btn = egui::Button::new(label)
+                        .fill(if selected {
+                            theme::accent_dim()
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        })
+                        .corner_radius(10.0);
                     if ui
-                        .selectable_label(selected, format!("  {}", tab.label()))
+                        .add_sized(egui::vec2(ui.available_width(), 38.0), btn)
                         .clicked()
                     {
                         self.tab = tab;
@@ -216,7 +246,7 @@ impl eframe::App for GuiApp {
                             self.devices_refresh.store(true, Ordering::Relaxed);
                         }
                     }
-                    ui.add_space(2.0);
+                    ui.add_space(4.0);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(8.0);
@@ -227,6 +257,24 @@ impl eframe::App for GuiApp {
                     );
                 });
             });
+
+        // ── Bottom status bar ──────────────────────────────────────
+        egui::Panel::bottom("statusbar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                let state = if snap.connected { "Live" } else { "Ready" };
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{state} · v{} · {}:{}",
+                        env!("CARGO_PKG_VERSION"),
+                        self.g.lan_ip,
+                        self.g.port
+                    ))
+                    .weak()
+                    .small(),
+                );
+            });
+        });
 
         // ── Content ────────────────────────────────────────────────
         egui::CentralPanel::default().show(ui, |ui| {

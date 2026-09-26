@@ -13,6 +13,7 @@
 
 pub mod app;
 mod panels;
+pub(crate) mod theme;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -595,6 +596,8 @@ pub fn run(g: GuiCtx) -> anyhow::Result<()> {
         "QuicMic",
         native_options,
         Box::new(move |cc| {
+            // QuicMic dark theme (visuals only) before anything renders.
+            theme::apply(&cc.egui_ctx);
             // Publish the live context so background watchers (Ctrl+C,
             // `/api/update`) can close the window from another thread.
             *app.egui_ctx_handle().lock() = Some(cc.egui_ctx.clone());
