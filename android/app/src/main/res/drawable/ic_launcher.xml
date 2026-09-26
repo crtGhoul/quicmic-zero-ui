@@ -10,13 +10,13 @@
         android:fillColor="#4ADE80"
         android:pathData="M54,30c-6.6,0 -12,5.4 -12,12v14c0,6.6 5.4,12 12,12s12,-5.4 12,-12V42c0,-6.6 -5.4,-12 -12,-12z" />
     <path
-        android:fillColor="none"
+        android:fillColor="@android:color/transparent"
         android:strokeColor="#4ADE80"
         android:strokeWidth="6"
         android:strokeLineCap="round"
         android:pathData="M38,56c0,8.8 7.2,16 16,16s16,-7.2 16,-16" />
     <path
-        android:fillColor="none"
+        android:fillColor="@android:color/transparent"
         android:strokeColor="#4ADE80"
         android:strokeWidth="6"
         android:strokeLineCap="round"
