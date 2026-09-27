@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/bg">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,221 +9,85 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Header card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/card_bg"
-            android:padding="16dp">
-
-            <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:src="@drawable/ic_mic"
-                android:tint="@color/quicmic_green"
-                android:contentDescription="@string/app_name" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:text="@string/app_name"
-                android:textColor="@color/text_primary"
-                android:textSize="22sp"
-                android:fontFamily="sans-serif-medium" />
-        </LinearLayout>
-
-        <!-- Connection status -->
         <TextView
             android:id="@+id/tv_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:gravity="center"
-            android:drawableStart="@drawable/dot_green"
-            android:drawablePadding="8dp"
             android:text="@string/status_idle"
-            android:textColor="@color/quicmic_green"
-            android:textSize="15sp" />
-
-        <!-- VU meter -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="INPUT LEVEL"
-            android:textColor="@color/text_muted"
-            android:textSize="12sp"
-            android:letterSpacing="0.08" />
+            android:textSize="18sp"
+            android:paddingBottom="8dp" />
 
         <ProgressBar
             android:id="@+id/level_bar"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:minHeight="20dp"
-            android:maxHeight="20dp"
             android:max="100"
             android:progress="0"
-            android:progressDrawable="@drawable/vu_meter" />
+            android:paddingBottom="8dp" />
 
         <TextView
             android:id="@+id/tv_stats"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center"
             android:text=""
-            android:textColor="@color/text_muted"
-            android:textSize="13sp" />
+            android:textSize="14sp"
+            android:paddingBottom="16dp" />
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:background="@color/divider" />
-
-        <!-- Action buttons -->
         <Button
             android:id="@+id/btn_start_stop"
-            style="@style/QuicMicButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:drawableStart="@drawable/ic_stop_ring"
             android:text="@string/start" />
 
         <Button
             android:id="@+id/btn_mute"
-            style="@style/QuicMicButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_mic"
-            android:drawableTint="@color/text_muted"
             android:text="@string/mute"
             android:enabled="false" />
 
-        <Button
-            android:id="@+id/btn_files"
-            style="@style/QuicMicButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_folder"
-            android:drawableTint="@color/text_muted"
-            android:text="@string/files"
-            android:enabled="false" />
-
-        <Button
-            android:id="@+id/btn_pair"
-            style="@style/QuicMicButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_link"
-            android:drawableTint="@color/text_muted"
-            android:text="@string/pair" />
-
-        <Button
-            android:id="@+id/btn_settings"
-            style="@style/QuicMicButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_gear"
-            android:drawableTint="@color/text_muted"
-            android:text="@string/settings" />
-
-        <Button
-            android:id="@+id/btn_unpair"
-            style="@style/QuicMicButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_link"
-            android:drawableTint="@color/text_muted"
-            android:text="@string/unpair" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="4dp"
-            android:background="@color/divider" />
-
-        <!-- Speaker toggle row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/card_bg"
-            android:padding="12dp">
+            android:paddingTop="8dp">
 
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:src="@drawable/ic_speaker"
-                android:tint="@color/quicmic_green"
-                android:contentDescription="@string/listen_to_pc" />
-
-            <TextView
+            <Button
+                android:id="@+id/btn_pair"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="@string/listen_to_pc"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
+                android:text="@string/pair" />
 
-            <Switch
-                android:id="@+id/sw_speaker"
-                android:layout_width="wrap_content"
+            <Button
+                android:id="@+id/btn_settings"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:thumbTint="@color/switch_thumb"
-                android:trackTint="@color/switch_track" />
+                android:layout_weight="1"
+                android:text="@string/settings" />
+
+            <Button
+                android:id="@+id/btn_unpair"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/unpair" />
         </LinearLayout>
 
-        <!-- Bluetooth toggle row -->
-        <LinearLayout
+        <Switch
+            android:id="@+id/sw_speaker"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/card_bg"
-            android:padding="12dp">
+            android:text="@string/listen_to_pc"
+            android:paddingTop="16dp" />
 
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:src="@drawable/ic_bluetooth"
-                android:tint="@color/text_muted"
-                android:contentDescription="@string/bluetooth_earbuds" />
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="@string/bluetooth_earbuds"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-            <Switch
-                android:id="@+id/sw_bt"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:thumbTint="@color/switch_thumb"
-                android:trackTint="@color/switch_track" />
-        </LinearLayout>
+        <Switch
+            android:id="@+id/sw_bt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/bluetooth_earbuds"
+            android:paddingTop="8dp" />
 
     </LinearLayout>
 </ScrollView>

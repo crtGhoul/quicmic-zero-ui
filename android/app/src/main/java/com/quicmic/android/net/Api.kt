@@ -28,17 +28,7 @@ import java.util.concurrent.TimeUnit
 
 private val JSON = "application/json; charset=utf-8".toMediaType()
 
-data class ServerInfo(
-    val certHashBase64: String,
-    val lanIp: String,
-    val wtPort: Int,
-    /** True when the server's startup update check found a newer release. */
-    val updateAvailable: Boolean = false,
-    /** Newer release tag (e.g. "v0.5.1"), present only when one was found. */
-    val latestVersion: String? = null,
-    /** Releases page URL for the update banner link. */
-    val releasesUrl: String? = null,
-)
+data class ServerInfo(val certHashBase64: String, val lanIp: String, val wtPort: Int)
 data class PairResult(
     val success: Boolean,
     val token: String?,
@@ -142,9 +132,6 @@ class Api(private val client: OkHttpClient, private val baseUrl: String) {
                 certHashBase64 = j.getString("cert_hash"),
                 lanIp = j.optString("lan_ip"),
                 wtPort = j.optInt("wt_port", 8443),
-                updateAvailable = j.optBoolean("update_available", false),
-                latestVersion = j.optString("latest_version").takeIf { it.isNotEmpty() },
-                releasesUrl = j.optString("releases_url").takeIf { it.isNotEmpty() },
             )
         }
     }
@@ -192,19 +179,6 @@ class Api(private val client: OkHttpClient, private val baseUrl: String) {
         }
     }
 
-    /** Raw GET /api/settings body (open, read-only) — for keys beyond noise_gate/gain. */
-    fun getSettingsJson(): JSONObject? {
-        val req = Request.Builder().url("$baseUrl/api/settings").get().build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            return try {
-                JSONObject(resp.body!!.string())
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
-
     /** Token goes in the body — that is the server's rule for this endpoint. */
     fun pushSettings(token: String, noiseGateLinear: Float, gain: Float): Boolean {
         val body = JSONObject()
@@ -214,79 +188,6 @@ class Api(private val client: OkHttpClient, private val baseUrl: String) {
             .toString()
             .toRequestBody(JSON)
         val req = Request.Builder().url("$baseUrl/api/settings").post(body).build()
-        client.newCall(req).execute().use { resp ->
-            return resp.isSuccessful
-        }
-    }
-
-    /**
-     * Extended settings push: POST /api/settings with the token in the body
-     * plus arbitrary key/value pairs (e.g. `output_volume`, `latency_threshold`).
-     * Unknown keys are ignored by the server, so callers may also pass keys
-     * that need a future server endpoint — they are best-effort by design.
-     */
-    fun pushSettingsExtended(token: String, values: Map<String, Any>): Boolean {
-        val body = JSONObject().put("token", token)
-        for ((k, v) in values) body.put(k, v)
-        val req = Request.Builder()
-            .url("$baseUrl/api/settings")
-            .post(body.toString().toRequestBody(JSON))
-            .build()
-        client.newCall(req).execute().use { resp ->
-            return resp.isSuccessful
-        }
-    }
-
-    /** Result of POST /api/monitor: whether a monitor stream exists and whether it is audible. */
-    data class MonitorResult(val available: Boolean, val enabled: Boolean)
-
-    /**
-     * Toggle the server-side hear-yourself monitor stream.
-     * The server is authoritative: returns the state it actually applied, or
-     * null when the request failed (callers should revert their UI).
-     */
-    fun setMonitor(token: String, enabled: Boolean): MonitorResult? {
-        val body = JSONObject()
-            .put("token", token)
-            .put("enabled", enabled)
-            .toString()
-            .toRequestBody(JSON)
-        val req = Request.Builder().url("$baseUrl/api/monitor").post(body).build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            val j = JSONObject(resp.body!!.string())
-            return MonitorResult(
-                available = j.optBoolean("available", false),
-                enabled = j.optBoolean("enabled", false),
-            )
-        }
-    }
-
-    /**
-     * Best-effort mic-rename request (feature #6): mirrors the PC GUI's
-     * Auto / Off / Fixed selector plus "Rename now" (src/gui/panels.rs).
-     *
-     * NOTE — "needs server endpoint": as of server v0.5.0 there is NO
-     * phone-facing rename API. POST /api/settings only accepts noise_gate /
-     * gain / latency_threshold / output_volume (src/server/api.rs), and serde
-     * silently ignores these extra keys, so the request is currently a no-op.
-     * A real implementation needs the server to accept them and set
-     * state.mic_rename_mode / call crate::mic_name::rename_mic(...)
-     * (Windows-only endpoint rename).
-     */
-    fun pushRename(
-        token: String,
-        mode: String,
-        fixedName: String?,
-        renameNow: String?,
-    ): Boolean {
-        val body = JSONObject().put("token", token).put("mic_rename_mode", mode)
-        if (fixedName != null) body.put("mic_rename_fixed_name", fixedName)
-        if (renameNow != null) body.put("mic_rename_now", renameNow)
-        val req = Request.Builder()
-            .url("$baseUrl/api/settings")
-            .post(body.toString().toRequestBody(JSON))
-            .build()
         client.newCall(req).execute().use { resp ->
             return resp.isSuccessful
         }

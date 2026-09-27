@@ -577,7 +577,6 @@ async fn run() -> anyhow::Result<()> {
         output_volume: output_volume.clone(),
         monitor_ring: monitor_ring.clone(),
         monitor_enabled: monitor_enabled.clone(),
-        test_capture: Arc::new(audio::MicTestBuffer::new()),
         packets_received: packets_received.clone(),
         packets_lost: packets_lost.clone(),
         source_sample_rate: source_sample_rate.clone(),
@@ -710,7 +709,17 @@ async fn run() -> anyhow::Result<()> {
 
     let router = server::build_router(app_state);
     let tls_config = tls::build_rustls_config_async(&identity).await?;
-    let https_addr = SocketAddr::new(lan_ip, cli.port);
+    // Bind the HTTPS listener to all interfaces by default so a wrong
+    // auto-detected LAN IP can't make the server unreachable: the detected
+    // (or --ip) address is still what the QR code and console advertise,
+    // but phones can also connect via any other local address (e.g. typed
+    // manually). An explicit --ip still binds only that address, preserving
+    // its use as a single-interface restriction.
+    let bind_ip = match &cli.ip {
+        Some(_) => lan_ip,
+        None => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+    };
+    let https_addr = SocketAddr::new(bind_ip, cli.port);
 
     let axum_handle = axum_server::Handle::new();
     let axum_handle_clone = axum_handle.clone();
@@ -751,8 +760,6 @@ async fn run() -> anyhow::Result<()> {
             speaker_generation: speaker_generation.clone(),
             speaker_device: speaker_device.clone(),
             monitor_present,
-            mic_test_running: Arc::new(AtomicBool::new(false)),
-            mic_test_error: Arc::new(parking_lot::Mutex::new(None)),
             phone_device_name: phone_device_name.clone(),
             mic_rename_mode: mic_rename_mode.clone(),
             applied_mic_name: applied_mic_name.clone(),

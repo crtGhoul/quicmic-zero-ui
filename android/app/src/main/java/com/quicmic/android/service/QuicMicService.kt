@@ -178,14 +178,6 @@ class QuicMicService : Service() {
     private fun applySettings() {
         mic.setGateDb(store.gateDb)
         mic.setGain(store.gain)
-        // Phone-local speaker volume also applies live when the speaker
-        // stream is up (the SettingsActivity audio-section binders re-fire
-        // this action after a speaker-volume change).
-        try {
-            speaker.setVolume(store.speakerVolume)
-        } catch (_: Exception) {
-            // Speaker not running; the stored value applies at the next start.
-        }
     }
 
     // --- Listeners ---

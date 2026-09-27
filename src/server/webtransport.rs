@@ -312,7 +312,6 @@ async fn handle_session(
                             &data[HEADER_SIZE..],
                             &stream.ring,
                             stream.monitor_ring.as_deref(),
-                            Some(stream.test_capture.as_ref()),
                         );
                     }
                     Err(e) => {

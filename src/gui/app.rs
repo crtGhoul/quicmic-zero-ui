@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use super::panels;
-use super::theme;
 use super::{GuiCtx, Snapshot};
 
 /// The five GUI screens, mirroring the console's command groups.
@@ -65,9 +64,6 @@ pub struct GuiApp {
     pub(super) pin_visible: bool,
     /// Update-check opt-out checkbox (persisted to gui_prefs.json).
     pub(super) update_opt_out: bool,
-    /// Light/dark theme (persisted to gui_prefs.json). Drives the header
-    /// toggle and the Settings panel radio buttons.
-    pub(super) theme_mode: theme::ThemeMode,
     /// Transient feedback line shown at the bottom of the active panel.
     pub(super) status_msg: Option<(String, Instant)>,
     /// The latest snapshot, refreshed in `logic` and rendered in `ui`.
@@ -80,9 +76,7 @@ impl GuiApp {
         snap: Arc<parking_lot::Mutex<Snapshot>>,
         devices_refresh: Arc<AtomicBool>,
     ) -> Self {
-        let prefs = super::load_prefs(&g.prefs_path);
-        let update_opt_out = prefs.update_check_opt_out;
-        let theme_mode = prefs.theme;
+        let update_opt_out = super::load_prefs(&g.prefs_path).update_check_opt_out;
         // Prefill the fixed-name field when the server started with one.
         let rename_fixed_name = match &*g.mic_rename_mode.lock() {
             crate::mic_name::MicRenameMode::Fixed(name) => name.clone(),
@@ -99,7 +93,6 @@ impl GuiApp {
             rename_fixed_name,
             pin_visible: true,
             update_opt_out,
-            theme_mode,
             status_msg: None,
             snap_now: Snapshot::default(),
         }
@@ -113,24 +106,6 @@ impl GuiApp {
 
     pub(super) fn notify(&mut self, msg: impl Into<String>) {
         self.status_msg = Some((msg.into(), Instant::now()));
-    }
-
-    /// Switch the GUI theme now and persist the choice to gui_prefs.json.
-    /// Called from the header quick-toggle and the Settings panel.
-    pub(super) fn set_theme(&mut self, ctx: &egui::Context, mode: theme::ThemeMode) {
-        if self.theme_mode == mode {
-            return;
-        }
-        self.theme_mode = mode;
-        theme::apply_theme(ctx, mode);
-        let prefs = super::GuiPrefs {
-            update_check_opt_out: self.update_opt_out,
-            theme: mode,
-        };
-        match super::save_prefs(&self.g.prefs_path, &prefs) {
-            Ok(()) => self.notify(format!("Theme: {} — saved.", mode.label())),
-            Err(e) => self.notify(format!("Could not save theme: {e:#}")),
-        }
     }
 
     fn take_status_msg(&mut self) -> Option<String> {
@@ -171,12 +146,6 @@ impl eframe::App for GuiApp {
         let snap = self.snap.lock().clone();
         self.refresh_qr(ctx, &snap.pin);
         self.snap_now = snap;
-        // A failed mic-test playback reports one-shot through the snapshot;
-        // surface it as a transient status line (notify just overwrites, so a
-        // repeated frame showing the same snapshot is harmless).
-        if let Some(err) = self.snap_now.mic_test_error.clone() {
-            self.notify(format!("Mic test failed: {err}"));
-        }
 
         // Live stats without burning CPU: repaint twice a second; input events
         // (clicks, typing) still repaint immediately.
@@ -187,38 +156,25 @@ impl eframe::App for GuiApp {
         let ctx = ui.ctx().clone();
         let snap = self.snap_now.clone();
 
-        // ── Header card: mic tile, title, connection pill ─────────────
+        // ── Top bar ────────────────────────────────────────────────
         egui::Panel::top("topbar").show(ui, |ui| {
-            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.add_space(6.0);
-                theme::mic_tile(ui, 40.0);
-                ui.add_space(6.0);
-                ui.vertical(|ui| {
-                    ui.heading(
-                        egui::RichText::new("QuicMic")
-                            .color(theme::title())
-                            .size(24.0),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                            .weak()
-                            .small(),
-                    );
-                });
-                ui.add_space(12.0);
-                if snap.connected {
+                ui.heading("QuicMic");
+                ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
+                ui.separator();
+                let (dot, text) = if snap.connected {
                     let who = snap
                         .phone_name
                         .clone()
                         .or(snap.mic_peer.clone())
                         .unwrap_or_else(|| "phone".to_string());
-                    theme::status_pill(ui, true, &format!("Connected: {who}"));
+                    ("🟢", format!("Connected: {who}"))
                 } else {
-                    theme::status_pill(ui, false, "Waiting for phone…");
-                }
+                    ("🔴", "Waiting for phone…".to_string())
+                };
+                ui.label(format!("{dot} {text}"));
                 if let Some(tag) = &snap.update_available {
-                    ui.add_space(8.0);
+                    ui.separator();
                     if ui
                         .link(format!("⬆ Update {tag} available"))
                         .on_hover_text("Open the Settings tab to install")
@@ -228,49 +184,24 @@ impl eframe::App for GuiApp {
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(6.0);
                     if ui.button("⏻ Quit").clicked() {
                         self.g.shutdown_requested.store(true, Ordering::SeqCst);
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    // Quick theme toggle: label shows the mode it switches to.
-                    let next = self.theme_mode.toggle();
-                    let label = match next {
-                        theme::ThemeMode::Light => "☀ Light",
-                        theme::ThemeMode::Dark => "☾ Dark",
-                    };
-                    if ui.button(label).on_hover_text("Switch theme").clicked() {
-                        self.set_theme(&ctx, next);
-                    }
                 });
             });
-            ui.add_space(4.0);
         });
 
         // ── Left nav ───────────────────────────────────────────────
         egui::Panel::left("nav")
             .resizable(false)
-            .default_size(160.0)
+            .default_size(150.0)
             .show(ui, |ui| {
-                ui.add_space(10.0);
+                ui.add_space(8.0);
                 for tab in Tab::all() {
                     let selected = self.tab == tab;
-                    let label = egui::RichText::new(tab.label())
-                        .size(15.0)
-                        .color(if selected {
-                            theme::accent_text()
-                        } else {
-                            theme::text()
-                        });
-                    let btn = egui::Button::new(label)
-                        .fill(if selected {
-                            theme::accent_dim()
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        })
-                        .corner_radius(10.0);
                     if ui
-                        .add_sized(egui::vec2(ui.available_width(), 38.0), btn)
+                        .selectable_label(selected, format!("  {}", tab.label()))
                         .clicked()
                     {
                         self.tab = tab;
@@ -279,7 +210,7 @@ impl eframe::App for GuiApp {
                             self.devices_refresh.store(true, Ordering::Relaxed);
                         }
                     }
-                    ui.add_space(4.0);
+                    ui.add_space(2.0);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(8.0);
@@ -290,24 +221,6 @@ impl eframe::App for GuiApp {
                     );
                 });
             });
-
-        // ── Bottom status bar ──────────────────────────────────────
-        egui::Panel::bottom("statusbar").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(6.0);
-                let state = if snap.connected { "Live" } else { "Ready" };
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{state} · v{} · {}:{}",
-                        env!("CARGO_PKG_VERSION"),
-                        self.g.lan_ip,
-                        self.g.port
-                    ))
-                    .weak()
-                    .small(),
-                );
-            });
-        });
 
         // ── Content ────────────────────────────────────────────────
         egui::CentralPanel::default().show(ui, |ui| {

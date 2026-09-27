@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::audio::MicTestBuffer;
 use crate::audio::RingBuffer;
 use crate::mic_name::MicRenameMode;
 use crate::tls::TlsIdentity;
@@ -32,11 +31,6 @@ pub struct StreamState {
     /// path pushes to both rings only when this is `Some`, keeping each ring's
     /// SPSC contract intact.
     pub monitor_ring: Option<Arc<RingBuffer>>,
-    /// Rolling ~5 s capture of incoming mic audio for the PC-side "Test mic"
-    /// button. Tapped on the decode hot path (`decode_into_rings`);
-    /// snapshotted by the GUI on click. Always recording while the process
-    /// runs — ~480 KB, flat.
-    pub test_capture: Arc<MicTestBuffer>,
     /// Runtime mute for the monitor stream, toggled from the phone UI via
     /// `POST /api/monitor`. Checked in the monitor output callback: `true` =
     /// audible. Defaults to `true` when the monitor stream is created.

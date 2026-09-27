@@ -1,51 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/bg">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="16dp">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/settings"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:fontFamily="sans-serif-medium"
-            android:paddingBottom="8dp" />
-
-        <!-- ================= Audio section ================= -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/au_section_title"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:fontFamily="sans-serif-medium"
-            android:paddingTop="12dp"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/device_name_label"
-            android:textColor="@color/text_muted"
-            android:textSize="13sp" />
+            android:text="@string/device_name_label" />
 
         <EditText
             android:id="@+id/et_device_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/field_bg"
-            android:padding="14dp"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
             android:inputType="text"
             android:maxLength="64" />
 
@@ -53,94 +25,58 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/gate_label"
-            android:textColor="@color/text_muted"
-            android:textSize="13sp"
-            android:paddingTop="20dp" />
+            android:paddingTop="16dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:orientation="horizontal">
 
             <SeekBar
                 android:id="@+id/sb_gate"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:progressTint="@color/quicmic_green"
-                android:thumbTint="@color/quicmic_green" />
+                android:layout_weight="1" />
 
             <TextView
                 android:id="@+id/tv_gate_val"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
                 android:minWidth="72dp"
-                android:gravity="end"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
+                android:gravity="end" />
         </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/gain_label"
-            android:textColor="@color/text_muted"
-            android:textSize="13sp"
-            android:paddingTop="20dp" />
+            android:paddingTop="16dp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:orientation="horizontal">
 
             <SeekBar
                 android:id="@+id/sb_gain"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:progressTint="@color/quicmic_green"
-                android:thumbTint="@color/quicmic_green" />
+                android:layout_weight="1" />
 
             <TextView
                 android:id="@+id/tv_gain_val"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
                 android:minWidth="72dp"
-                android:gravity="end"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
+                android:gravity="end" />
         </LinearLayout>
-
-        <include layout="@layout/settings_section_audio" />
-
-        <!-- ================= Speaker section ================= -->
-        <include layout="@layout/settings_section_speaker" />
-
-        <!-- ================= Drop section ================= -->
-        <include
-            android:id="@+id/section_drop"
-            layout="@layout/settings_section_drop" />
-
-        <!-- ================= System section ================= -->
-        <include layout="@layout/settings_section_system" />
-
-        <!-- Mic rename lives under System (closest existing home; mirrors the
-             PC GUI's mic-rename selector which is also a settings-page item). -->
-        <include layout="@layout/settings_section_rename" />
 
         <Button
             android:id="@+id/btn_save"
-            style="@style/QuicMicButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/save"
-            android:layout_marginTop="28dp" />
+            android:layout_marginTop="24dp" />
 
     </LinearLayout>
 </ScrollView>
