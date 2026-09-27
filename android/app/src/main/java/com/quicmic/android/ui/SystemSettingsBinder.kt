@@ -32,6 +32,9 @@ object SystemSettingsBinder {
         activity.findViewById<Button>(R.id.sys_btn_diagnostics).setOnClickListener {
             activity.startActivity(Intent(activity, DiagnosticsActivity::class.java))
         }
+        activity.findViewById<Button>(R.id.sys_btn_guide).setOnClickListener {
+            activity.startActivity(Intent(activity, GuideActivity::class.java))
+        }
     }
 
     // --- Theme ---

@@ -1101,3 +1101,115 @@ body {
     background: var(--accent-faint);
     border-color: var(--accent-dim);
 }
+
+/* ── 101 Guide page (web/guide.html) ─────────────────────────────────── */
+.guide {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 20px 16px 64px;
+    color: var(--text);
+}
+
+.guide-title {
+    font-size: 24px;
+    margin: 8px 0 4px;
+}
+
+.guide-lede {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.5;
+    margin: 0 0 20px;
+}
+
+.guide-card {
+    background: var(--card);
+    border: 1px solid #1a1a24;
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 14px;
+}
+
+.guide-card h2 {
+    font-size: 17px;
+    margin: 0 0 10px;
+    color: var(--accent);
+}
+
+.guide-card p {
+    font-size: 14.5px;
+    line-height: 1.55;
+    margin: 0 0 10px;
+    color: var(--text);
+}
+
+.guide-card p:last-child,
+.guide-card ol:last-child,
+.guide-card dl:last-child {
+    margin-bottom: 0;
+}
+
+.guide-card ol {
+    font-size: 14.5px;
+    line-height: 1.55;
+    margin: 0;
+    padding-left: 22px;
+    color: var(--text);
+}
+
+.guide-card ol li {
+    margin-bottom: 8px;
+}
+
+.guide-card ol li:last-child {
+    margin-bottom: 0;
+}
+
+.guide-card code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    background: var(--bg-soft);
+    border: 1px solid #1a1a24;
+    border-radius: 6px;
+    padding: 1px 6px;
+    color: var(--accent);
+}
+
+.guide-card a {
+    color: var(--accent);
+}
+
+.guide-hint {
+    display: block;
+    color: var(--text-faint);
+    font-size: 12.5px;
+    margin-top: 4px;
+}
+
+.guide-faq {
+    margin: 0;
+    font-size: 14.5px;
+    line-height: 1.55;
+}
+
+.guide-faq dt {
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 10px;
+}
+
+.guide-faq dt:first-child {
+    margin-top: 0;
+}
+
+.guide-faq dd {
+    margin: 2px 0 0;
+    color: var(--text-dim);
+}
+
+.guide-foot {
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 18px 2px 0;
+}

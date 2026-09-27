@@ -55,6 +55,10 @@
         <activity
             android:name=".ui.DiagnosticsActivity"
             android:exported="false" />
+        <!-- Built-in 101 guide (opened from the Pair screen + Settings). -->
+        <activity
+            android:name=".ui.GuideActivity"
+            android:exported="false" />
         <!-- Native Drop sender: receives Android share intents (no WebView). -->
         <activity
             android:name=".ui.DropShareActivity"
