@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Speaker controls section (PC → phone). Self-contained fragment: the
+    integrator <include>s this into activity_settings.xml and calls
+    SpeakerSettingsBinder.bind(activity). Ids are prefixed "sp_". Everything
+    here is phone-local (mirrors web/speaker.html) — no server endpoint.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_section_title"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp"
+        android:fontFamily="sans-serif-medium"
+        android:paddingTop="20dp"
+        android:paddingBottom="4dp" />
+
+    <!-- Speaker volume (phone-local; applied live to SpeakerPlayer) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/sp_volume_label"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/sp_tv_volume"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="72dp"
+            android:gravity="end"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/sp_sb_volume"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:progressTint="@color/quicmic_green"
+        android:thumbTint="@color/quicmic_green" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_volume_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Stream latency preset (phone-local; applies on next speaker start) -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_latency_label"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp"
+        android:paddingTop="16dp" />
+
+    <Spinner
+        android:id="@+id/sp_sp_latency"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_latency_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Output device picker (phone-local; applies on next speaker start) -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_sink_label"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp"
+        android:paddingTop="16dp" />
+
+    <Spinner
+        android:id="@+id/sp_sp_sink"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_sink_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Local test tone -->
+    <Button
+        android:id="@+id/sp_btn_tone"
+        style="@style/QuicMicButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="@string/sp_test_tone" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sp_test_tone_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+</LinearLayout>

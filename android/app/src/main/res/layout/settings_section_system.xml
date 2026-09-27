@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  System settings section fragment. INTEGRATOR: <include
+  layout="@layout/settings_section_system" /> this at the end of
+  activity_settings.xml's inner LinearLayout (after the Save button), then call
+  SystemSettingsBinder.bind(this) from SettingsActivity.onCreate AFTER
+  setContentView.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Section header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="28dp"
+        android:paddingBottom="12dp"
+        android:text="@string/system_section"
+        android:textColor="@color/text_primary"
+        android:textSize="20sp"
+        android:fontFamily="sans-serif-medium" />
+
+    <!-- Theme row -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/theme_label"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        android:weightSum="3">
+
+        <Button
+            android:id="@+id/sys_theme_dark"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="@string/theme_dark"
+            android:textAllCaps="false"
+            android:minHeight="48dp" />
+
+        <Button
+            android:id="@+id/sys_theme_light"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="3dp"
+            android:layout_marginEnd="3dp"
+            android:text="@string/theme_light"
+            android:textAllCaps="false"
+            android:minHeight="48dp" />
+
+        <Button
+            android:id="@+id/sys_theme_system"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/theme_system"
+            android:textAllCaps="false"
+            android:minHeight="48dp" />
+    </LinearLayout>
+
+    <!-- PC update check row -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="20dp"
+        android:text="@string/update_label"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/sys_update_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/update_from_server_note"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/sys_btn_update_check"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="@string/update_check_now"
+            android:textAllCaps="false"
+            android:minHeight="48dp" />
+    </LinearLayout>
+
+    <!-- Update opt-out row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/update_opt_out_label"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp" />
+
+        <Switch
+            android:id="@+id/sys_sw_update_optout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="@color/switch_thumb"
+            android:trackTint="@color/switch_track" />
+    </LinearLayout>
+
+    <!-- Diagnostics entry row -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="20dp"
+        android:text="@string/diagnostics_label"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/sys_btn_diagnostics"
+        style="@style/QuicMicButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/diagnostics_open" />
+
+</LinearLayout>

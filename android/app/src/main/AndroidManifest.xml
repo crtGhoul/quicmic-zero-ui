@@ -8,6 +8,14 @@
     <!-- Foreground service that owns the mic (microphone type needs the mic permission). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Foreground service that receives Drop files (dataSync type). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Vibrate on incoming Drop offers (matches the web Drop page). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Pre-Android 10 fallback for saving received Drops to Downloads. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <!-- Persistent-notification runtime permission (Android 13+; harmless below). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- QR scanning -->
@@ -23,6 +31,7 @@
         android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
+        android:name=".ui.QuicMicApp"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.QuicMic">
 
@@ -43,10 +52,31 @@
         <activity
             android:name=".ui.DropActivity"
             android:exported="false" />
+        <activity
+            android:name=".ui.DiagnosticsActivity"
+            android:exported="false" />
+        <!-- Native Drop sender: receives Android share intents (no WebView). -->
+        <activity
+            android:name=".ui.DropShareActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".service.QuicMicService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!-- Background Drop receiver: keeps the matchmaker socket alive and
+             raises Accept/Decline for incoming offers. dataSync = file
+             transfer; required on Android 14+ along with the permission. -->
+        <service
+            android:name=".service.DropReceiveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

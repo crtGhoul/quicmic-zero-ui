@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light variant of Theme.QuicMic (see the inverted-convention note in
+         values-night/colors.xml). Same green accent as the dark theme. -->
+    <style name="Theme.QuicMic" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/quicmic_green</item>
+        <item name="colorPrimaryDark">@color/bg</item>
+        <item name="colorAccent">@color/quicmic_green</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+</resources>

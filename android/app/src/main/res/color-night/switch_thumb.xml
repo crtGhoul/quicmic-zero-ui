@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light-theme variant: the unchecked thumb stays light-grey instead of dark. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/quicmic_green" android:state_checked="true" />
+    <item android:color="#9AA0A6" />
+</selector>

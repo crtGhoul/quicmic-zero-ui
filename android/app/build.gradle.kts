@@ -78,4 +78,15 @@ dependencies {
 
     // EncryptedSharedPreferences for token / PIN / pinned cert / settings.
     implementation("androidx.security:security-crypto:1.1.0")
+
+    // Native WebRTC for Drop file sharing (Maven Central, no Play Services —
+    // same sideloading stance as the rest of the app). Speaks the Drop
+    // protocol from web/drop.js natively: data channel "localdrop".
+    //
+    // NOTE: org.webrtc:google-webrtc was only ever published to JCenter
+    // (dead since 2021) and is NOT on Maven Central — neither 1.0.32006 nor
+    // 1.0.30039 resolve. GetStream's stream-webrtc-android is the maintained
+    // Maven Central fork and keeps the org.webrtc.* Java package, so the
+    // Drop code compiles unchanged.
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
 }

@@ -59,6 +59,12 @@ class SettingsActivity : AppCompatActivity() {
         renderGate()
         renderGain()
 
+        AudioSettingsBinder.bind(this)
+        SpeakerSettingsBinder.bind(this)
+        DropSettingsBinder.bind(this)
+        SystemSettingsBinder.bind(this)
+        RenameSettingsBinder.bind(this)
+
         findViewById<Button>(R.id.btn_save).setOnClickListener { save() }
     }
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light-theme variant: the unchecked track stays light-grey instead of dark. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#2E7D4F" android:state_checked="true" />
+    <item android:color="#C9CDD4" />
+</selector>
