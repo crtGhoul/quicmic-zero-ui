@@ -1,16 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/bg">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pair"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:fontFamily="sans-serif-medium"
+            android:paddingBottom="16dp" />
 
         <Button
             android:id="@+id/btn_scan"
+            style="@style/QuicMicButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/scan_qr" />
@@ -19,43 +30,62 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/or_enter_manually"
-            android:paddingTop="16dp"
-            android:paddingBottom="8dp" />
+            android:textColor="@color/text_muted"
+            android:textSize="14sp"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
 
         <EditText
             android:id="@+id/et_host"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/field_bg"
+            android:padding="14dp"
             android:hint="@string/hint_host"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
             android:inputType="text" />
 
         <EditText
             android:id="@+id/et_port"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/field_bg"
+            android:padding="14dp"
             android:hint="@string/hint_port"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
             android:inputType="number" />
 
         <EditText
             android:id="@+id/et_pin"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/field_bg"
+            android:padding="14dp"
             android:hint="@string/hint_pin"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
             android:inputType="number"
             android:maxLength="6" />
 
         <Button
             android:id="@+id/btn_fetch"
+            style="@style/QuicMicButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/fetch_identity"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="16dp"
+            android:text="@string/fetch_identity" />
 
         <TextView
             android:id="@+id/tv_pin_confirm"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:visibility="gone"
+            android:textColor="@color/text_primary"
             android:textSize="16sp"
             android:paddingTop="16dp" />
 
@@ -66,22 +96,25 @@
             android:visibility="gone"
             android:textIsSelectable="true"
             android:typeface="monospace"
+            android:textColor="@color/text_muted"
             android:textSize="13sp"
             android:paddingTop="8dp" />
 
         <Button
             android:id="@+id/btn_confirm"
+            style="@style/QuicMicButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:visibility="gone"
             android:text="@string/confirm_pair"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="16dp" />
 
         <TextView
             android:id="@+id/tv_pair_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingTop="16dp"
+            android:textColor="@color/text_muted"
             android:textSize="14sp" />
 
     </LinearLayout>

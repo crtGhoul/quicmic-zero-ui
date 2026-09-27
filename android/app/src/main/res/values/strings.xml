@@ -8,6 +8,7 @@
     <string name="pair">Pair</string>
     <string name="settings">Settings</string>
     <string name="unpair">Unpair</string>
+    <string name="files">Files</string>
     <string name="listen_to_pc">Listen to PC speaker</string>
     <string name="bluetooth_earbuds">Bluetooth earbuds (SCO)</string>
 
