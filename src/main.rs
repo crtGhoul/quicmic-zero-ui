@@ -710,7 +710,17 @@ async fn run() -> anyhow::Result<()> {
 
     let router = server::build_router(app_state);
     let tls_config = tls::build_rustls_config_async(&identity).await?;
-    let https_addr = SocketAddr::new(lan_ip, cli.port);
+    // Bind the HTTPS listener to all interfaces by default so a wrong
+    // auto-detected LAN IP can't make the server unreachable: the detected
+    // (or --ip) address is still what the QR code and console advertise,
+    // but phones can also connect via any other local address (e.g. typed
+    // manually). An explicit --ip still binds only that address, preserving
+    // its use as a single-interface restriction.
+    let bind_ip = match &cli.ip {
+        Some(_) => lan_ip,
+        None => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+    };
+    let https_addr = SocketAddr::new(bind_ip, cli.port);
 
     let axum_handle = axum_server::Handle::new();
     let axum_handle_clone = axum_handle.clone();
