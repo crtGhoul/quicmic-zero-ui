@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings for the audio knobs (SettingsActivity sections). Kept here —
+     not in strings.xml — so the integrator can review them as one block. -->
+<resources>
+    <!-- Section titles -->
+    <string name="au_section_title">Audio (mic → PC)</string>
+    <string name="sp_section_title">Speaker (PC → phone)</string>
+
+    <!-- Audio section -->
+    <string name="au_output_volume_label">Output volume</string>
+    <string name="au_output_volume_hint">PC-side volume, applied after your mic audio reaches the computer.</string>
+    <string name="au_echo_cancel_label">Echo cancellation</string>
+    <string name="au_echo_cancel_hint">Phone-side echo removal for the mic. Applies on the next stream start.</string>
+    <string name="au_monitor_label">Monitor (hear yourself)</string>
+    <string name="au_monitor_hint">Plays your mic through the PC\'s speakers/headphones. Needs the server started with --monitor-device.</string>
+    <string name="au_monitor_unavailable">Monitor is not enabled on the server (needs --monitor-device)</string>
+    <string name="au_monitor_failed">Monitor toggle failed</string>
+    <string name="au_latency_label">Latency recovery</string>
+    <string name="au_latency_hint">How far the server reaches back to recover from a latency spike. 0 = off.</string>
+    <string name="au_latency_off">Off</string>
+    <string name="au_mic_input_label">Microphone</string>
+    <string name="au_mic_input_hint">Phone mic used for capture. Applies on the next stream start.</string>
+    <string name="au_mic_input_default">Default</string>
+    <string name="au_power_save_label">Power-save mode</string>
+    <string name="au_power_save_hint">Turns off the hear-yourself monitor and asks the main screen to slow its VU-meter refresh.</string>
+    <string name="au_reset">Reset</string>
+
+    <!-- Speaker section -->
+    <string name="sp_volume_label">Speaker volume</string>
+    <string name="sp_volume_hint">Volume of the PC-speaker stream on this phone only.</string>
+    <string name="sp_latency_label">Stream latency</string>
+    <string name="sp_latency_hint">Buffer against Wi-Fi jitter. Higher is smoother but more delayed. Applies on the next speaker start.</string>
+    <string name="sp_sink_label">Output device</string>
+    <string name="sp_sink_hint">Where the PC-speaker audio plays. Applies on the next speaker start.</string>
+    <string name="sp_sink_default">System default</string>
+    <string name="sp_test_tone">Play test tone</string>
+    <string name="sp_test_tone_hint">An 880 Hz tone on this phone only (no network) — a quick way to prove your earbuds are routed before streaming.</string>
+    <string name="sp_test_tone_stop">Stop test tone</string>
+
+    <string-array name="sp_latency_entries">
+        <item>Low (snappier, may stutter)</item>
+        <item>Balanced</item>
+        <item>Smooth (more delay)</item>
+    </string-array>
+    <string-array name="sp_latency_values">
+        <item>low</item>
+        <item>balanced</item>
+        <item>smooth</item>
+    </string-array>
+</resources>

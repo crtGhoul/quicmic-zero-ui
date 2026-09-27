@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings for the feature #6 mic-rename settings section. Namespaced
+     rename_* to avoid collisions with other workers' strings. -->
+<resources>
+    <string name="rename_section_title">Mic name (what apps list)</string>
+    <string name="rename_mode_auto">Auto</string>
+    <string name="rename_mode_off">Off</string>
+    <string name="rename_mode_fixed">Fixed name</string>
+    <string name="rename_fixed_name_hint">Fixed mic name</string>
+    <string name="rename_fixed_empty_hint">Type a name to use Fixed mode.</string>
+    <string name="rename_now">Rename now</string>
+    <string name="rename_note">Takes effect once the PC server supports it (future update).</string>
+    <string name="rename_saved">Rename settings saved</string>
+    <string name="rename_needs_name">Type a name first</string>
+    <string name="rename_requested">Rename requested</string>
+</resources>

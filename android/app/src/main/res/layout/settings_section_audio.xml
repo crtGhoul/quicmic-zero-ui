@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Audio knobs section (mic → PC). Self-contained fragment: the integrator
+    <include>s this into activity_settings.xml and calls
+    AudioSettingsBinder.bind(activity). Ids are prefixed "au_".
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Output volume (PC-side; POST /api/settings "output_volume") -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/au_output_volume_label"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/au_tv_output_volume"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="72dp"
+            android:gravity="end"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/au_btn_output_volume_reset"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/au_reset"
+            android:textSize="12sp"
+            android:textColor="@color/quicmic_green" />
+    </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/au_sb_output_volume"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:progressTint="@color/quicmic_green"
+        android:thumbTint="@color/quicmic_green" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_output_volume_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Echo cancellation (phone-local capture pref; no server key) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/au_echo_cancel_label"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp" />
+
+        <Switch
+            android:id="@+id/au_sw_echo_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="@color/switch_thumb"
+            android:trackTint="@color/switch_track" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_echo_cancel_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Monitor: hear yourself (POST /api/monitor) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/au_monitor_label"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp" />
+
+        <Switch
+            android:id="@+id/au_sw_monitor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="@color/switch_thumb"
+            android:trackTint="@color/switch_track" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_monitor_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Latency recovery (POST /api/settings "latency_threshold") -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/au_latency_label"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/au_tv_latency"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="72dp"
+            android:gravity="end"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/au_btn_latency_reset"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/au_reset"
+            android:textSize="12sp"
+            android:textColor="@color/quicmic_green" />
+    </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/au_sb_latency"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:progressTint="@color/quicmic_green"
+        android:thumbTint="@color/quicmic_green" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_latency_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Mic input picker (phone-local; applied on next stream start) -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_mic_input_label"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp"
+        android:paddingTop="16dp" />
+
+    <Spinner
+        android:id="@+id/au_sp_mic_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_mic_input_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+    <!-- Power-save mode -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/au_power_save_label"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp" />
+
+        <Switch
+            android:id="@+id/au_sw_power_save"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="@color/switch_thumb"
+            android:trackTint="@color/switch_track" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/au_power_save_hint"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingTop="4dp" />
+
+</LinearLayout>

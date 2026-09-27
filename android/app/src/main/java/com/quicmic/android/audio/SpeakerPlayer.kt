@@ -61,6 +61,20 @@ class SpeakerPlayer(
     var bluetoothSco = false
         private set
 
+    /**
+     * Phone-local speaker volume (mirrors the web speaker page's spk_volume
+     * slider). Persists to the store and applies live when a track is up.
+     */
+    fun setVolume(v: Float) {
+        val clamped = v.coerceIn(0f, 1f)
+        store.speakerVolume = clamped
+        try {
+            trackRef?.setVolume(clamped)
+        } catch (_: Exception) {
+            // No live track; the stored value applies at the next start.
+        }
+    }
+
     private var thread: Thread? = null
     private var listener: Listener? = null
 
@@ -213,6 +227,11 @@ class SpeakerPlayer(
 
         if (store.btEnabled) setBluetoothSco(true)
         listener?.onStatus("Listening to PC")
+        try {
+            track.setVolume(store.speakerVolume)
+        } catch (_: Exception) {
+            // Volume is best-effort on some devices; playback continues.
+        }
         track.play()
 
         val floats = FloatArray(FRAME_SAMPLES * CHANNELS)

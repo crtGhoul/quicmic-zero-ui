@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- System settings section (theme, update check, diagnostics). -->
+
+    <string name="system_section">System</string>
+
+    <string name="theme_label">App theme</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_system">System</string>
+
+    <string name="update_label">PC update check</string>
+    <string name="update_check_now">Check now</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_up_to_date">Up to date</string>
+    <string name="update_available_fmt">Update available: %1$s</string>
+    <string name="update_not_paired">Not paired — pair with a PC first</string>
+    <string name="update_disabled">Update check is off</string>
+    <string name="update_check_failed_fmt">Check failed: %1$s</string>
+    <string name="update_opt_out_label">Notify me about PC updates</string>
+    <string name="update_from_server_note">Status comes from the PC server (/api/info).</string>
+
+    <string name="diagnostics_label">Diagnostics</string>
+    <string name="diagnostics_open">Open diagnostics</string>
+
+    <!-- Diagnostics screen rows. -->
+
+    <string name="diag_title">Diagnostics</string>
+    <string name="diag_connection">Connection</string>
+    <string name="diag_transport">Transport</string>
+    <string name="diag_transport_ws">WebSocket (TCP)</string>
+    <string name="diag_not_streaming">Not streaming</string>
+    <string name="diag_server">Server</string>
+    <string name="diag_lan_ip">Server LAN IP</string>
+    <string name="diag_ping">Ping (HTTPS RTT)</string>
+    <string name="diag_audio">Audio</string>
+    <string name="diag_device_name">Device name</string>
+    <string name="diag_mic_health">Mic stream</string>
+    <string name="diag_streaming">Streaming</string>
+    <string name="diag_idle">Idle</string>
+    <string name="diag_stats">Server stats</string>
+    <string name="diag_packets">Packets received</string>
+    <string name="diag_loss">Packet loss</string>
+    <string name="diag_buffer">Jitter buffer</string>
+    <string name="diag_cert">Certificate</string>
+    <string name="diag_cert_fp">SHA-256 fingerprint</string>
+    <string name="diag_unavailable">—</string>
+    <string name="diag_refresh">Refresh</string>
+    <string name="diag_refreshing">Refreshing…</string>
+</resources>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LIGHT palette. Note the inverted convention (see ThemeManager): the app is
+  dark-first, so res/values/colors.xml holds the DARK palette and this
+  values-night file holds the LIGHT one. Every name here must match a color
+  in values/colors.xml so the drawables resolve in both modes.
+-->
+<resources>
+    <!-- Brand (kept) -->
+    <color name="quicmic_green">#4ADE80</color>
+    <color name="quicmic_bg">#1B2430</color>
+
+    <!-- Light theme surfaces -->
+    <color name="bg">#F4F5F7</color>
+    <color name="card">#FFFFFF</color>
+    <color name="card_pressed">#E9EBEF</color>
+    <color name="card_disabled">#EDEFF2</color>
+    <color name="field">#FFFFFF</color>
+    <color name="field_stroke">#D4D8DF</color>
+    <color name="divider">#E3E6EB</color>
+
+    <!-- Text -->
+    <color name="text_primary">#141419</color>
+    <color name="text_muted">#5F6368</color>
+
+    <!-- Accents -->
+    <color name="accent_red">#E5484D</color>
+    <color name="accent_red_dark">#5C2A30</color>
+    <color name="accent_green_dark">#1E5B3A</color>
+
+    <!-- VU meter -->
+    <color name="vu_track">#E3E6EB</color>
+    <color name="vu_start">#2E9E5B</color>
+    <color name="vu_end">#7DF0A8</color>
+</resources>

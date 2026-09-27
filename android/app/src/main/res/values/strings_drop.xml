@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- All Drop (native file sharing) strings. Kept separate from strings.xml
+     per the task constraints — do not merge these into strings.xml. -->
+<resources>
+    <!-- Settings section -->
+    <string name="drop_section_title">Drop — file sharing</string>
+    <string name="drop_section_desc">Send files and text to the paired PC natively — no browser needed. Receiving works while the app is in the background.</string>
+    <string name="drop_send_file">📤 Send file to PC…</string>
+    <string name="drop_receive_label">Background receive</string>
+    <string name="drop_receive_desc">Stay reachable for incoming Drops and ask before accepting each one.</string>
+    <string name="drop_auto_accept_label">Auto-accept incoming Drops</string>
+    <string name="drop_auto_accept_desc">Save incoming files immediately without asking. Anyone on the matchmaker server could push files to this phone.</string>
+    <string name="drop_server_label">Matchmaker server (tap-to-connect signaling)</string>
+
+    <!-- Share activity -->
+    <string name="drop_share_title">Send to PC</string>
+    <string name="drop_share_sub">Files and text go straight to the paired PC over an encrypted peer-to-peer connection.</string>
+    <string name="drop_ready_short">Ready</string>
+    <string name="drop_nothing_to_send">Nothing to send.</string>
+    <string name="drop_ready">%1$d item(s) ready to send.</string>
+    <string name="drop_find_pc">📶 Find PC nearby</string>
+    <string name="drop_pair_code">🔑 Pair with code instead</string>
+    <string name="drop_code_hint">On the PC, open the Drop page and tap Share, then paste its share code here:</string>
+    <string name="drop_code_hint_input">Paste the PC\'s share code…</string>
+    <string name="drop_make_reply">Create my reply code</string>
+    <string name="drop_connecting_matchmaker">Connecting to matchmaker…</string>
+    <string name="drop_matchmaker_lost">Matchmaker connection lost — retrying…</string>
+    <string name="drop_matchmaker_error">Matchmaker error: %1$s</string>
+    <string name="drop_no_devices">No other devices online. Open the Drop page on the PC so it appears here.</string>
+    <string name="drop_tap_pc">Tap your PC to send:</string>
+    <string name="drop_ringing">Ringing %1$s…</string>
+    <string name="drop_no_answer">%1$s didn\'t answer.</string>
+    <string name="drop_declined">%1$s declined.</string>
+    <string name="drop_bad_code">That doesn\'t look like a Drop share code. Copy the FULL code from the PC\'s Share screen.</string>
+    <string name="drop_generating_reply">Generating reply…</string>
+    <string name="drop_waiting_host">Waiting for the PC to accept your reply code…</string>
+    <string name="drop_connected_sending">Connected — sending…</string>
+    <string name="drop_sending_file">Sending %1$s (%2$d/%3$d)…</string>
+    <string name="drop_sent">Sent ✓</string>
+    <string name="drop_send_interrupted">Connection lost during send.</string>
+    <string name="drop_webrtc_failed">Couldn\'t start the connection.</string>
+    <string name="drop_file_too_big">%1$s is too big to send (256 MB cap).</string>
+    <string name="drop_cant_read">Couldn\'t read that file.</string>
+    <string name="drop_pair_first">Pair with the PC first</string>
+    <string name="drop_reply_title">Your reply code</string>
+    <string name="drop_reply_hint">Give this code back to the PC (paste it into its Share screen, or let it scan the QR). Keep this screen open.</string>
+    <string name="drop_reply_qr_desc">QR code of the reply code</string>
+    <string name="drop_copy_reply">Copy reply code</string>
+    <string name="drop_copied">Copied</string>
+
+    <!-- Receive service notifications -->
+    <string name="drop_notif_listen_channel">Drop background receive</string>
+    <string name="drop_notif_listen_title">Drop receive</string>
+    <string name="drop_notif_listening">Listening for incoming Drops</string>
+    <string name="drop_notif_connecting">Connecting…</string>
+    <string name="drop_stop">Stop</string>
+    <string name="drop_notif_incoming_channel">Incoming Drop</string>
+    <string name="drop_incoming_title">%1$s wants to send you files</string>
+    <string name="drop_incoming_text">Accept to receive via Drop.</string>
+    <string name="drop_accept">Accept</string>
+    <string name="drop_decline">Decline</string>
+    <string name="drop_receiving_title">Receiving Drop…</string>
+    <string name="drop_saved_title">Drop saved to Downloads</string>
+    <string name="drop_save_failed_title">Drop failed to save</string>
+</resources>

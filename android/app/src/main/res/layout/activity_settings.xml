@@ -17,7 +17,18 @@
             android:textColor="@color/text_primary"
             android:textSize="20sp"
             android:fontFamily="sans-serif-medium"
-            android:paddingBottom="16dp" />
+            android:paddingBottom="8dp" />
+
+        <!-- ================= Audio section ================= -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/au_section_title"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:fontFamily="sans-serif-medium"
+            android:paddingTop="12dp"
+            android:paddingBottom="4dp" />
 
         <TextView
             android:layout_width="match_parent"
@@ -105,6 +116,23 @@
                 android:textColor="@color/text_primary"
                 android:textSize="14sp" />
         </LinearLayout>
+
+        <include layout="@layout/settings_section_audio" />
+
+        <!-- ================= Speaker section ================= -->
+        <include layout="@layout/settings_section_speaker" />
+
+        <!-- ================= Drop section ================= -->
+        <include
+            android:id="@+id/section_drop"
+            layout="@layout/settings_section_drop" />
+
+        <!-- ================= System section ================= -->
+        <include layout="@layout/settings_section_system" />
+
+        <!-- Mic rename lives under System (closest existing home; mirrors the
+             PC GUI's mic-rename selector which is also a settings-page item). -->
+        <include layout="@layout/settings_section_rename" />
 
         <Button
             android:id="@+id/btn_save"
