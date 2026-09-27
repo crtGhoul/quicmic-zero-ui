@@ -42,7 +42,7 @@ fn card_section<R>(
             RichText::new(title)
                 .size(17.0)
                 .strong()
-                .color(theme::HEADING),
+                .color(theme::heading()),
         );
         ui.add_space(6.0);
         add_contents(ui)
@@ -51,9 +51,9 @@ fn card_section<R>(
 
 fn status_dot(connected: bool) -> RichText {
     if connected {
-        RichText::new("● Connected").color(theme::LIVE)
+        RichText::new("● Connected").color(theme::live())
     } else {
-        RichText::new("○ Idle").color(theme::IDLE)
+        RichText::new("○ Idle").color(theme::idle())
     }
 }
 
@@ -147,7 +147,9 @@ pub(super) fn status(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
                 );
             if btn.clicked() {
                 match trigger_mic_test(&app.g) {
-                    Ok(()) => app.notify("Playing back the last ~5 s of mic audio on the PC speakers…"),
+                    Ok(()) => {
+                        app.notify("Playing back the last ~5 s of mic audio on the PC speakers…")
+                    }
                     Err(e) => app.notify(format!("Mic test: {e:#}")),
                 }
             }
@@ -265,7 +267,7 @@ pub(super) fn pairing(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
                 RichText::new("Pair your phone")
                     .size(17.0)
                     .strong()
-                    .color(theme::HEADING),
+                    .color(theme::heading()),
             );
             ui.add_space(6.0);
             if let Some(tex) = &app.qr_texture {
@@ -283,7 +285,7 @@ pub(super) fn pairing(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
                     RichText::new(&snap.pin)
                         .size(52.0)
                         .monospace()
-                        .color(theme::ACCENT_TEXT),
+                        .color(theme::accent_text()),
                 );
                 ui.label(RichText::new("Pairing PIN").weak());
             } else {
@@ -291,7 +293,7 @@ pub(super) fn pairing(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
                     RichText::new("••••••")
                         .size(52.0)
                         .monospace()
-                        .color(theme::ACCENT_TEXT),
+                        .color(theme::accent_text()),
                 );
                 ui.label(RichText::new("Pairing PIN (hidden)").weak());
             }
@@ -391,6 +393,23 @@ pub(super) fn devices(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
 // ── Settings ──────────────────────────────────────────────────────────────
 
 pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
+    card_section(ui, "Appearance", |ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Theme").weak());
+            let mut mode = app.theme_mode;
+            ui.radio_value(&mut mode, theme::ThemeMode::Light, "☀ Light");
+            ui.radio_value(&mut mode, theme::ThemeMode::Dark, "☾ Dark");
+            if mode != app.theme_mode {
+                app.set_theme(ui.ctx(), mode);
+            }
+        });
+        ui.label(
+            RichText::new("Applies immediately and is remembered across restarts.")
+                .weak()
+                .small(),
+        );
+    });
+
     card_section(ui, "Audio", |ui| {
         egui::Grid::new("settings-grid")
             .num_columns(3)
@@ -575,6 +594,7 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             app.update_opt_out = !update_check;
             let prefs = super::GuiPrefs {
                 update_check_opt_out: app.update_opt_out,
+                theme: app.theme_mode,
             };
             match super::save_prefs(&app.g.prefs_path, &prefs) {
                 Ok(()) => app.notify("Saved — takes effect on next start."),
@@ -662,7 +682,7 @@ pub(super) fn diagnostics(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) 
                             .unwrap_or_else(|| "system default".to_string()),
                     );
                     ui.label(if snap.device_ok {
-                        RichText::new("OK").color(theme::LIVE)
+                        RichText::new("OK").color(theme::live())
                     } else {
                         RichText::new("REBUILDING").color(egui::Color32::YELLOW)
                     });
