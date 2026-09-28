@@ -77,6 +77,9 @@ class PairActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_scan).setOnClickListener { ensureCameraThenScan() }
         findViewById<Button>(R.id.btn_fetch).setOnClickListener { fetchIdentity() }
         btnConfirm.setOnClickListener { confirmAndPair() }
+        findViewById<Button>(R.id.btn_guide).setOnClickListener {
+            startActivity(Intent(this, GuideActivity::class.java))
+        }
     }
 
     // --- QR scanning ---

@@ -145,4 +145,21 @@
         android:layout_marginTop="8dp"
         android:text="@string/diagnostics_open" />
 
+    <!-- 101 guide entry row -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="20dp"
+        android:text="@string/guide_title"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/sys_btn_guide"
+        style="@style/QuicMicButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/guide_open" />
+
 </LinearLayout>

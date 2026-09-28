@@ -117,5 +117,14 @@
             android:textColor="@color/text_muted"
             android:textSize="14sp" />
 
+        <Button
+            android:id="@+id/btn_guide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/guide_open"
+            android:textAllCaps="false"
+            android:minHeight="48dp" />
+
     </LinearLayout>
 </ScrollView>

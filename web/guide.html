@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0a0a0f">
+    <title>QuicMic — 101 Guide</title>
+    <!-- Same inline favicon as the other pages (no separate file, CSP-friendly). -->
+    <link rel="icon" type="image/png" href="data:image/png;base64,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">
+    <link rel="apple-touch-icon" href="data:image/png;base64,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">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Shared app nav: Mic / Drop / Speaker / Guide switcher (one app, four screens). -->
+    <nav class="appnav" aria-label="App sections">
+        <a class="appnav-link" href="mic.html">&#127908; Mic</a>
+        <a class="appnav-link" href="drop.html">&#128230; Drop</a>
+        <a class="appnav-link" href="speaker.html">&#128266; Speaker</a>
+        <a class="appnav-link active" href="guide.html" aria-current="page">&#10067; Guide</a>
+    </nav>
+
+    <main class="guide">
+        <h1 class="guide-title">&#10067; The 101 Guide</h1>
+        <p class="guide-lede">Everything you need to go from "what is this" to talking into your
+            phone and hearing it on your PC. Short sections, no jargon.</p>
+
+        <section class="guide-card">
+            <h2>What QuicMic is</h2>
+            <p>QuicMic turns your phone into a wireless microphone for your PC. You talk into
+                the phone, and your PC hears it as a microphone input — for Discord, games,
+                recording, whatever you like.</p>
+            <p>Everything stays on your own home WiFi. No cloud, no account, no internet
+                needed once it's set up.</p>
+        </section>
+
+        <section class="guide-card">
+            <h2>First run on the PC</h2>
+            <ol>
+                <li>Run the QuicMic exe on your PC. A console window opens showing a big QR
+                    code and a 6-digit PIN.</li>
+                <li>When Windows Firewall asks, allow it on <strong>private</strong> networks.
+                    Skipping this is the most common reason phones can't connect.</li>
+                <li>Leave that window open — it's the server. The QR code and PIN live there.</li>
+            </ol>
+        </section>
+
+        <section class="guide-card">
+            <h2>Pairing your phone</h2>
+            <ol>
+                <li>Install the QuicMic Android app and open it.</li>
+                <li>Tap <strong>Scan QR code</strong> and point it at the code in the PC
+                    window. It fills in the address and PIN for you.</li>
+                <li>No camera handy? Open the <a href="qr.html">/qr page</a> on any device to
+                    see the code bigger, or type the PC's address and PIN in by hand.</li>
+                <li>Tap connect. That's it — you're paired.</li>
+            </ol>
+        </section>
+
+        <section class="guide-card">
+            <h2>The golden rule: same WiFi</h2>
+            <p>Both devices must be on the <strong>same WiFi network</strong>. If your phone is
+                on mobile data, or on a guest network while the PC is on the main one, they
+                can't see each other and pairing will just time out.</p>
+        </section>
+
+        <section class="guide-card">
+            <h2>Getting your voice into Discord and other apps</h2>
+            <p>Your phone's audio arrives at the PC, but apps like Discord need somewhere to
+                pick it up from. That's what a virtual audio cable is for:</p>
+            <ol>
+                <li>Install a virtual audio cable on the PC (VB-Cable is a popular free one).</li>
+                <li>Point QuicMic's output at it (the Speaker screen has a device picker and a
+                    test tone so you can check it's alive).</li>
+                <li>In Discord (or Windows sound settings), set your input device to that
+                    virtual cable. Now your phone is your mic.</li>
+            </ol>
+        </section>
+
+        <section class="guide-card">
+            <h2>The QR shows a weird address (like 10.2.0.2)?</h2>
+            <p>Sometimes the PC picks the wrong network address for the QR code — VPNs and
+                virtual adapters confuse it. If the address doesn't look like your home
+                network (usually 192.168.something), fix it like this:</p>
+            <ol>
+                <li>Close the QuicMic window.</li>
+                <li>On the PC, open a command prompt and run <code>ipconfig</code> to find
+                    your real address (the 192.168.something one).</li>
+                <li>Start the exe again with that address forced:<br>
+                    <code>quicmic.exe --ip 192.168.1.50</code>
+                    <span class="guide-hint">(use your real address, not this example)</span></li>
+                <li>Scan the fresh QR code. It'll show the right address now.</li>
+            </ol>
+        </section>
+
+        <section class="guide-card">
+            <h2>Quick troubleshooting</h2>
+            <dl class="guide-faq">
+                <dt>"Could not verify server" or it just times out</dt>
+                <dd>Your phone can't reach the PC. Check: same WiFi? PC app actually
+                    running? Firewall allowed? Right address?</dd>
+                <dt>It paired before but won't now</dt>
+                <dd>The PIN probably rotated. Grab the fresh one from the PC window and
+                    try again.</dd>
+                <dt>Choppy or delayed audio</dt>
+                <dd>Usually WiFi congestion. The Mic screen's latency-recovery slider is
+                    made for exactly this — nudge it up.</dd>
+                <dt>No sound in Discord but the app looks connected</dt>
+                <dd>Discord is probably listening to the wrong input. Check its voice
+                    settings and point it at the virtual cable.</dd>
+            </dl>
+        </section>
+
+        <p class="guide-foot">Still stuck? The Mic screen has a <strong>Diagnose
+            connection</strong> button that checks the common problems for you.</p>
+    </main>
+
+</body>
+
+</html>

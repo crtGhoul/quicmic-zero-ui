@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 101 Guide screen + entry points. -->
+
+    <string name="guide_title">How to use QuicMic</string>
+    <string name="guide_open">How to use this app</string>
+
+    <string name="guide_what_title">What this app does</string>
+    <string name="guide_what_body">QuicMic turns your phone into a wireless microphone for your PC. You talk into the phone, and the PC hears it as a mic input — for Discord, games, calls, or recording. Everything stays on your home WiFi: no cloud, no account.</string>
+
+    <string name="guide_pc_title">Step 1 — set up the PC</string>
+    <string name="guide_pc_body">On your PC, run quicmic-windows-x86_64.exe. A window opens showing a big QR code and a 6-digit PIN.\n\nWhen Windows Firewall asks, allow it on private networks — this is the most common reason pairing fails.\n\nFor apps like Discord to hear you, the PC needs a virtual audio device (such as VB-Cable) installed: the app plays your phone\u2019s audio into it, and Discord listens to that device.</string>
+
+    <string name="guide_pair_title">Step 2 — pair your phone</string>
+    <string name="guide_pair_body">Tap \u201cScan QR code\u201d and scan the code in the PC window. It fills in the address and PIN automatically, then tap \u201cFetch server identity\u201d and \u201cConfirm &amp; Pair\u201d.\n\nNo camera? Type the details manually: the PC\u2019s address (looks like 192.168.x.x — find it with ipconfig on the PC), port 8443, and the 6-digit PIN from the PC window.</string>
+
+    <string name="guide_wifi_title">Same WiFi, always</string>
+    <string name="guide_wifi_body">Both devices must be on the same WiFi network. If your phone is on mobile data (or a guest network), it will never find the PC.</string>
+
+    <string name="guide_ip_title">QR shows a weird address?</string>
+    <string name="guide_ip_body">If the QR code fills in something odd like 10.2.0.2 instead of 192.168.x.x, the PC picked the wrong network (a VPN or virtual adapter). Newer PC versions fix this automatically.\n\nWorkaround: close the PC app, open cmd in its folder, and start it with quicmic-windows-x86_64.exe --ip 192.168.x.x using the PC\u2019s real address from ipconfig. Then scan the fresh QR code.</string>
+
+    <string name="guide_pin_title">PIN stopped working?</string>
+    <string name="guide_pin_body">The PIN can change (for example after a PC restart). If pairing suddenly fails, look at the PC window and use the PIN it shows right now.</string>
+
+    <string name="guide_settings_title">Tour of Settings</string>
+    <string name="guide_settings_audio">Audio (mic \u2192 PC): your microphone \u2014 noise gate, gain, echo cancellation, latency recovery, and the phone mic picker.</string>
+    <string name="guide_settings_speaker">Speaker (PC \u2192 phone): listen to the PC\u2019s audio on your phone \u2014 volume, delay, output device, and a test tone.</string>
+    <string name="guide_settings_drop">Drop \u2014 file sharing: send files and text between phone and PC, and receive files even with the app in the background.</string>
+    <string name="guide_settings_system">System: app theme (dark/light), PC update checks, mic naming, and the diagnostics screen.</string>
+
+    <string name="guide_trouble_title">Quick troubleshooting</string>
+    <string name="guide_trouble_timeout">\u201cCould not verify server\u201d / timeout: the phone can\u2019t reach the PC. Check \u2014 same WiFi? PC app running? Firewall allowed? Right address?</string>
+    <string name="guide_trouble_choppy">Choppy or delayed audio: WiFi congestion. Move closer to the router, and try the latency-recovery slider in Audio settings.</string>
+    <string name="guide_trouble_silent">Silent after a phone call: the OS took the microphone. Go back to the app and reconnect.</string>
+</resources>
