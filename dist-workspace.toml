@@ -10,15 +10,13 @@ ci = "github"
 # The installers to generate for each app
 installers = ["msi"]
 # Target platforms to build apps for (Rust target-triple syntax): x86_64 + arm64
-# for Linux, Windows, and macOS. The lock-free ring buffer and resampler are
-# already tuned for weak-memory-model (ARM) CPUs, so arm64 is a first-class target
-# across all three OSes. cargo-dist picks current runners per target (e.g.
-# macos-15-intel for x86_64 macOS).
+# for Linux and Windows only. macOS is not a supported platform (owner's call;
+# the code stays cross-platform so it can come back later). The lock-free ring
+# buffer and resampler are already tuned for weak-memory-model (ARM) CPUs, so
+# arm64 is a first-class target on both OSes.
 targets = [
-    "aarch64-apple-darwin",
     "aarch64-pc-windows-msvc",
     "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
 ]
