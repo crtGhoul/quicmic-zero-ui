@@ -125,6 +125,10 @@ open = "5"
 # Linux/macOS builds gain no system dependencies from it.
 png = "0.18"
 
+[target.'cfg(windows)'.build-dependencies]
+# Embeds assets/quicmic.ico into the .exe on Windows (build.rs, cfg(windows)).
+winresource = "0.1"
+
 [dev-dependencies]
 # `tower`'s `util` feature provides `ServiceExt::oneshot`, used to drive the axum
 # router in-process for the HTTP API tests (no real socket or audio device).
