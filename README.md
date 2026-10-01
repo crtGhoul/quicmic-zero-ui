@@ -97,6 +97,8 @@ Don't want a console window sitting around? Run the exe with `--tray`: when doub
 
 **Prerequisite (Windows):** install the free [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) once — QuicMic plays your phone's voice into it, and apps like Discord then pick "CABLE Output" (renamed to your phone's name, see above) as their microphone. In Discord: Settings → Voice & Video → Input Device → your phone's name.
 
+**Speech-focused noise cancellation (on by default, PC-side):** the PC runs RNNoise plus a voice gate on your mic audio before apps hear it — speech-focused noise cancellation — passes human voice, suppresses background noise; it does not identify a specific person. Fans, keyboard clatter and TV chatter are attenuated, and between sentences the output fades to near-silence. Toggle it in the Mic settings drawer ("Noise cancellation (PC)"); it adds at most ~20 ms (one 10 ms frame of buffering plus the model's own frame delay). The phone's existing noise gate still applies first — the two stack fine.
+
 Tap the big button to mute/unmute. Gestures:
 
 - **Tap** — mute / unmute

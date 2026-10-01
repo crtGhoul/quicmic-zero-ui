@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Speech-focused noise cancellation (PC-side, on by default):** RNNoise (pure-Rust `nnnoiseless`) plus a voice-activity gate now clean the mic audio on the PC before it reaches apps — speech-focused noise cancellation — passes human voice, suppresses background noise; it does not identify a specific person. Frames with no detected speech fade to near-silence with a ~250 ms hangover so word endings aren't clipped; added latency is at most ~20 ms. Toggle/threshold via `/api/settings` (`noise_cancellation`, `nc_vad_threshold`) and the phone's Mic settings drawer. Previously the only noise handling was the phone-side amplitude noise gate in the AudioWorklet — there was no server-side suppression.
 - Windows NSIS installer via cargo-dist (Start Menu shortcut + uninstaller); the portable `.exe` remains available. The build embeds `assets/quicmic.ico` into the exe when that asset is present.
 
 ### Changed
