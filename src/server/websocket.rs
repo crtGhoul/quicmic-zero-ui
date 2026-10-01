@@ -141,6 +141,7 @@ async fn handle_ws_connection(
                             &data[4..],
                             &state.stream.ring,
                             state.stream.monitor_ring.as_deref(),
+                            Some(&state.stream.denoiser),
                         );
                     }
                     Message::Close(_) => break,

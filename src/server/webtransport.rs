@@ -312,6 +312,7 @@ async fn handle_session(
                             &data[HEADER_SIZE..],
                             &stream.ring,
                             stream.monitor_ring.as_deref(),
+                            Some(&stream.denoiser),
                         );
                     }
                     Err(e) => {

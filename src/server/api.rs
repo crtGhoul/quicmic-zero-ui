@@ -84,6 +84,11 @@ pub(super) struct SettingsUpdate {
     gain: Option<f32>,
     latency_threshold: Option<u32>,
     output_volume: Option<f32>,
+    /// Speech-focused noise cancellation on/off (Gate 5).
+    noise_cancellation: Option<bool>,
+    /// Voice-activity probability threshold (0.0–1.0) for the noise
+    /// cancellation gate; higher = only clearer speech passes.
+    nc_vad_threshold: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -93,6 +98,10 @@ pub(super) struct SettingsResponse {
     latency_threshold: u32,
     /// PC-side output volume multiplier (1.0 = unity).
     output_volume: f32,
+    /// Speech-focused noise cancellation on/off (Gate 5, default on).
+    noise_cancellation: bool,
+    /// Voice-activity probability threshold (0.0–1.0) for the NC gate.
+    nc_vad_threshold: f32,
     /// Whether a hear-yourself monitor stream exists (i.e. the server was
     /// started with `--monitor-device`).
     monitor_available: bool,
@@ -353,7 +362,10 @@ pub(super) async fn handle_get_settings(State(state): State<AppState>) -> Json<S
 
 /// Build the current settings response from shared state.
 fn settings_response(state: &AppState) -> SettingsResponse {
+    let denoiser = state.stream.denoiser.lock();
     SettingsResponse {
+        noise_cancellation: denoiser.enabled(),
+        nc_vad_threshold: denoiser.vad_threshold(),
         noise_gate: f32::from_bits(state.stream.noise_gate.load(Ordering::Relaxed)),
         gain: f32::from_bits(state.stream.gain.load(Ordering::Relaxed)),
         latency_threshold: state.stream.latency_threshold.load(Ordering::Relaxed),
@@ -413,6 +425,15 @@ pub(super) async fn handle_update_settings(
             .output_volume
             .store(clamped.to_bits(), Ordering::Relaxed);
         info!(output_volume = clamped, "Output volume updated");
+    }
+    if let Some(nc) = body.noise_cancellation {
+        state.stream.denoiser.lock().set_enabled(nc);
+        info!(noise_cancellation = nc, "Noise cancellation updated");
+    }
+    if let Some(t) = body.nc_vad_threshold {
+        // Clamp inside the setter as well; this is just for the log line.
+        state.stream.denoiser.lock().set_vad_threshold(t);
+        info!(nc_vad_threshold = t.clamp(0.0, 1.0), "NC VAD threshold updated");
     }
 
     Json(settings_response(&state)).into_response()
