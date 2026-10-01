@@ -130,6 +130,7 @@ const lrValue = document.getElementById('lr-value');
 const lrReset = document.getElementById('lr-reset');
 const monitorRow = document.getElementById('monitor-row');
 const monitorToggle = document.getElementById('monitor-toggle');
+const ncToggle = document.getElementById('nc-toggle');
 const updateBtn = document.getElementById('update-btn');
 
 // Zero-UI additions: volume HUD, coach overlay, drawer controls, capture prefs.
@@ -313,6 +314,7 @@ async function init() {
         updateServerSettings();
     });
     monitorToggle.addEventListener('change', updateMonitor);
+    ncToggle.addEventListener('change', updateServerSettings);
     updateBtn.addEventListener('click', updatePcApp);
 
     lrSlider.addEventListener('input', () => {
@@ -643,6 +645,9 @@ function applySettingsToUI(s) {
     if (s.monitor_enabled !== undefined) {
         monitorToggle.checked = !!s.monitor_enabled;
     }
+    if (s.noise_cancellation !== undefined) {
+        ncToggle.checked = !!s.noise_cancellation;
+    }
     if (s.latency_threshold !== undefined) {
         const lt = parseInt(s.latency_threshold);
         lrSlider.value = lt;
@@ -680,6 +685,7 @@ async function updateServerSettings() {
         gain: parseFloat(gainSlider.value),
         output_volume: parseFloat(ovSlider.value),
         latency_threshold: parseInt(lrSlider.value),
+        noise_cancellation: ncToggle.checked,
     };
 
     storageSet('quicmic_settings', JSON.stringify(settings));
