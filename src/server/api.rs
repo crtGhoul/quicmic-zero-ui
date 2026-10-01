@@ -433,7 +433,10 @@ pub(super) async fn handle_update_settings(
     if let Some(t) = body.nc_vad_threshold {
         // Clamp inside the setter as well; this is just for the log line.
         state.stream.denoiser.lock().set_vad_threshold(t);
-        info!(nc_vad_threshold = t.clamp(0.0, 1.0), "NC VAD threshold updated");
+        info!(
+            nc_vad_threshold = t.clamp(0.0, 1.0),
+            "NC VAD threshold updated"
+        );
     }
 
     Json(settings_response(&state)).into_response()

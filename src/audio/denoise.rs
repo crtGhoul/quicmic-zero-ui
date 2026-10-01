@@ -63,7 +63,9 @@ impl VoiceGate {
         self.threshold
     }
 
-    /// Current smoothed gain (after the most recent `step`).
+    /// Current smoothed gain (after the most recent `step`). Test-only: the
+    /// production path consumes `step`'s returned ramp directly.
+    #[cfg(test)]
     pub fn gain(&self) -> f32 {
         self.gain
     }
@@ -98,7 +100,7 @@ impl VoiceGate {
 /// changes take the same lock from the HTTP handler (never on the audio
 /// callback).
 pub struct SpeechDenoiser {
-    state: Box<DenoiseState>,
+    state: Box<DenoiseState<'static>>,
     gate: VoiceGate,
     enabled: bool,
     in_f32: [f32; FRAME_SAMPLES],
