@@ -10,7 +10,7 @@ One Windows app, three screens. Your phone becomes a **wireless mic**, a **file-
 
 This is what you see when you start the exe. It shows a QR code, the phone URL, and a 6-digit pairing PIN (values below are illustrative — yours will differ):
 
-![PC console window](docs/screenshots/pc-console.png)
+*(Screenshot removed for launch — it showed a real pairing PIN/QR. A sanitized one will be retaken during the Windows smoke test.)*
 
 While it runs, the window logs what's happening: `Phone paired successfully`, `Mic client connected`, `Speaker client streaming`, and disconnects — each with the phone's IP, so you can see at a glance what's live.
 
