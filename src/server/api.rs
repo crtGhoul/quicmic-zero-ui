@@ -526,14 +526,20 @@ pub(super) struct UpdateResponse {
 
 /// POST /api/update — run the self-updater, the same flow as the `update`
 /// console command. Requires the session token in the `X-Session-Token`
-/// header (like `/api/stats`).
+/// header (like `/api/stats`), **and** a loopback peer: swapping the PC's
+/// executable is a PC-local action, so a paired phone on the LAN gets 403
+/// and must ask the person at the PC to run `update` there instead.
 ///
 /// When a newer release is downloaded and staged, the main task is asked to
 /// shut down so the updater batch can swap the exe and restart it. The
 /// shutdown request is sent *after* the handler builds the response, and the
 /// `reject_during_shutdown` middleware already ran before this handler, so the
 /// response reaches the phone even though the process is about to exit.
-pub(super) async fn handle_update(State(state): State<AppState>, headers: HeaderMap) -> Response {
+pub(super) async fn handle_update(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
     let authorized = {
         let provided = headers.get("x-session-token").and_then(|v| v.to_str().ok());
         let guard = state.stream.session_token.lock();
@@ -544,6 +550,13 @@ pub(super) async fn handle_update(State(state): State<AppState>, headers: Header
     };
     if !authorized {
         return (StatusCode::UNAUTHORIZED, "Invalid or missing token").into_response();
+    }
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            "Updates must be started from the PC app/console",
+        )
+            .into_response();
     }
 
     match crate::self_update::run_update().await {

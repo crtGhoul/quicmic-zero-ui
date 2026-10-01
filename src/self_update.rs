@@ -1,9 +1,8 @@
 //! Self-updater for the exe: the `update` console command.
 //!
-//! Flow: read a GitHub token (`QUICMIC_GITHUB_TOKEN` env var, or
-//! `github_token.txt` next to the exe) → ask the GitHub API for the private
-//! repo's latest release → compare against the running version → download the
-//! `.exe` asset next to the running exe → write a small updater batch file →
+//! Flow: ask the GitHub API for this (public) repo's latest release → compare
+//! against the running version → download the installable Windows asset next
+//! to the running exe → write a small updater batch file →
 //! spawn it detached → the console quits gracefully; the batch waits for our
 //! PID to exit, swaps the new exe over the old one, restarts it with the same
 //! arguments, and deletes itself.
@@ -21,11 +20,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::update_check;
 
-/// `owner/repo` whose releases carry the exe. Private, so the API calls below
-/// need the token — the unauthenticated startup check in
-/// [`crate::update_check`] targets the same repo but can only stay silent
-/// without auth; it never reports a version on its own.
-const PRIVATE_REPO: &str = "crtGhoul/quicmic-zero-ui";
+/// `owner/repo` whose releases carry the Windows assets. The repo is public,
+/// so the API calls below work with no token at all; an optional token
+/// (`QUICMIC_GITHUB_TOKEN` env var, or `github_token.txt` next to the exe)
+/// only raises the GitHub API rate limit and is never required.
+const REPO: &str = "crtGhoul/quicmic-zero-ui";
 
 /// Overall budgets so a wedged network can never hang the console forever.
 const API_TIMEOUT: Duration = Duration::from_secs(20);
@@ -34,15 +33,16 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 /// Where the token lives if not given via env.
 const TOKEN_FILE: &str = "github_token.txt";
 
-/// A release worth installing: its tag plus the `.exe` asset's API URL.
+/// A release worth installing: its tag plus the installable asset's API URL.
 pub struct ReleaseInfo {
     pub tag: String,
     pub asset_name: String,
     pub asset_api_url: String,
 }
 
-/// GitHub token for the private repo: env var wins, then `github_token.txt`
-/// next to the exe (first line). The value is never logged.
+/// Optional GitHub token: env var wins, then `github_token.txt` next to the
+/// exe (first line). Only used to raise API rate limits on `api.github.com`;
+/// updates work without it. The value is never logged.
 pub fn github_token() -> Option<String> {
     if let Ok(t) = std::env::var("QUICMIC_GITHUB_TOKEN") {
         let t = t.trim().to_string();
@@ -84,19 +84,10 @@ pub async fn run_update() -> anyhow::Result<bool> {
         return Ok(false);
     }
 
-    let token = github_token().ok_or_else(|| {
-        anyhow::anyhow!(
-            "No GitHub token found.\n\
-             Create a fine-grained personal access token (read-only, just the \
-             quicmic-zero-ui repo):\n  \
-             https://github.com/settings/personal-access-tokens/new\n\
-             Then either set the QUICMIC_GITHUB_TOKEN environment variable, or \
-             save the token as the first line of {TOKEN_FILE} next to the exe."
-        )
-    })?;
+    let token = github_token();
 
     println!("Checking for updates…");
-    let rel = tokio::time::timeout(API_TIMEOUT, latest_release(&token))
+    let rel = tokio::time::timeout(API_TIMEOUT, latest_release(token.as_deref()))
         .await
         .map_err(|_| anyhow::anyhow!("GitHub API timed out"))??;
 
@@ -121,7 +112,7 @@ pub async fn run_update() -> anyhow::Result<bool> {
     let dest = exe.with_extension("exe.new");
     let bytes = tokio::time::timeout(
         DOWNLOAD_TIMEOUT,
-        download_asset(&rel.asset_api_url, &token, &dest),
+        download_asset(&rel.asset_api_url, token.as_deref(), &dest),
     )
     .await
     .map_err(|_| anyhow::anyhow!("download timed out"))??;
@@ -142,22 +133,35 @@ pub async fn run_update() -> anyhow::Result<bool> {
     }
 }
 
-/// Query the private repo's latest release and pick its `.exe` asset.
-async fn latest_release(token: &str) -> anyhow::Result<ReleaseInfo> {
+/// Query the repo's latest release and pick its installable Windows asset.
+/// The token is optional: when present it is sent only to `api.github.com`
+/// (higher rate limit); the public release needs no auth.
+async fn latest_release(token: Option<&str>) -> anyhow::Result<ReleaseInfo> {
+    let mut headers = vec![
+        ("Accept", "application/vnd.github+json".to_string()),
+        ("X-GitHub-Api-Version", "2022-11-28".to_string()),
+    ];
+    if let Some(t) = token {
+        headers.push(("Authorization", format!("Bearer {t}")));
+    }
     let resp = https_get(
         "api.github.com",
-        &format!("/repos/{PRIVATE_REPO}/releases/latest"),
-        &[
-            ("Authorization", format!("Bearer {token}")),
-            ("Accept", "application/vnd.github+json".to_string()),
-            ("X-GitHub-Api-Version", "2022-11-28".to_string()),
-        ],
+        &format!("/repos/{REPO}/releases/latest"),
+        &headers
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect::<Vec<_>>(),
     )
     .await?;
     match resp.status {
         200 => {}
-        401 => anyhow::bail!("GitHub rejected the token (401) — check it hasn't expired"),
-        404 => anyhow::bail!("release not found (404) — token needs read access to {PRIVATE_REPO}"),
+        401 => anyhow::bail!(
+            "GitHub rejected the optional token (401) — remove/refresh QUICMIC_GITHUB_TOKEN, or unset it (public releases need no token)"
+        ),
+        403 => anyhow::bail!(
+            "GitHub API rate-limited this network (403) — try again later, or set QUICMIC_GITHUB_TOKEN for a higher limit"
+        ),
+        404 => anyhow::bail!("no published release found in {REPO} (404)"),
         s => anyhow::bail!("GitHub API returned status {s}"),
     }
     let body = decode_body(&resp)?;
@@ -174,8 +178,12 @@ async fn latest_release(token: &str) -> anyhow::Result<ReleaseInfo> {
     let (asset_name, asset_api_url) = v
         .get("assets")
         .and_then(|a| a.as_array())
-        .and_then(|assets| pick_exe_asset(assets))
-        .ok_or_else(|| anyhow::anyhow!("latest release has no .exe asset"))?;
+        .and_then(|assets| pick_install_asset(assets))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "latest release {tag} has no installable Windows asset (looked for an NSIS                  setup .exe/.msi or a bare .exe for this PC's architecture) — zip-only                  releases can't self-update; download the installer manually from                  https://github.com/{REPO}/releases/latest"
+            )
+        })?;
     Ok(ReleaseInfo {
         tag,
         asset_name,
@@ -183,21 +191,50 @@ async fn latest_release(token: &str) -> anyhow::Result<ReleaseInfo> {
     })
 }
 
-/// Pick the release asset to install: the first whose name ends exactly in
-/// `.exe`. Pure, so it is unit-testable. Returns `(name, api_url)`.
+/// Arch tokens a Windows asset name may carry for the running PC, most
+/// specific first (cargo-dist uses the target triple, e.g. `x86_64`).
+fn arch_tokens() -> (&'static str, &'static str) {
+    match std::env::consts::ARCH {
+        "x86_64" => ("x86_64", "x64"),
+        "aarch64" => ("aarch64", "arm64"),
+        _ => ("", ""),
+    }
+}
+
+fn name_matches_arch(lower_name: &str) -> bool {
+    let (a, b) = arch_tokens();
+    (!a.is_empty() && lower_name.contains(a)) || (!b.is_empty() && lower_name.contains(b))
+}
+
+/// Pick the release asset to install. Pure, so it is unit-testable. Returns
+/// `(name, api_url)`.
 ///
-/// A release with no bare `.exe` asset (only a `.zip`, for example) yields
-/// `None` — the caller reports that clearly instead of downloading the wrong
-/// file. A name like `quicmic.exe.zip` does not qualify.
-fn pick_exe_asset(assets: &[serde_json::Value]) -> Option<(String, String)> {
-    assets.iter().find_map(|a| {
-        let name = a.get("name")?.as_str()?;
-        if !name.ends_with(".exe") {
-            return None;
-        }
-        let url = a.get("url")?.as_str()?.to_string();
-        Some((name.to_string(), url))
-    })
+/// cargo-dist ships archives and (with the NSIS installer enabled) a Windows
+/// setup program — not the bare portable `.exe` this updater swaps in place.
+/// Preference order:
+/// 1. an NSIS/setup `.exe` for this PC's architecture (`…-setup.exe`),
+/// 2. a bare `.exe` for this architecture,
+/// 3. a setup `.msi`,
+/// 4. any remaining bare `.exe` (last resort when arch is unmarked).
+///
+/// A name like `quicmic.exe.zip` never qualifies — archives can't be swapped
+/// over the running exe, and a zip-only release yields `None` so the caller
+/// can point the user at the manual download instead of staging garbage.
+fn pick_install_asset(assets: &[serde_json::Value]) -> Option<(String, String)> {
+    let named = |want: &dyn Fn(&str) -> bool| -> Option<(String, String)> {
+        assets.iter().find_map(|a| {
+            let name = a.get("name")?.as_str()?;
+            if !want(&name.to_ascii_lowercase()) {
+                return None;
+            }
+            let url = a.get("url")?.as_str()?.to_string();
+            Some((name.to_string(), url))
+        })
+    };
+    named(&|n| n.contains("setup") && n.ends_with(".exe") && name_matches_arch(n))
+        .or_else(|| named(&|n| n.ends_with(".exe") && !n.contains("setup") && name_matches_arch(n)))
+        .or_else(|| named(&|n| n.contains("setup") && n.ends_with(".msi")))
+        .or_else(|| named(&|n| n.ends_with(".exe") && !n.contains("setup")))
 }
 
 /// Cheap integrity gate for a downloaded Windows executable: every PE starts
@@ -211,13 +248,15 @@ fn looks_like_pe(bytes: &[u8]) -> bool {
 /// `objects.githubusercontent.com` URL). The token is only sent to
 /// `api.github.com`, never to the redirect target. The asset is small enough
 /// (~8 MB) to hold in memory, then written to `dest` in one go.
-async fn download_asset(api_url: &str, token: &str, dest: &Path) -> anyhow::Result<u64> {
+async fn download_asset(api_url: &str, token: Option<&str>, dest: &Path) -> anyhow::Result<u64> {
     let mut url = api_url.to_string();
     for _ in 0..5 {
         let (host, path) = split_url(&url)?;
         let mut headers = vec![("Accept", "application/octet-stream".to_string())];
         if host == "api.github.com" {
-            headers.push(("Authorization", format!("Bearer {token}")));
+            if let Some(t) = token {
+                headers.push(("Authorization", format!("Bearer {t}")));
+            }
         }
         let resp = https_get(&host, &path, &headers).await?;
         match resp.status {
@@ -241,7 +280,7 @@ async fn download_asset(api_url: &str, token: &str, dest: &Path) -> anyhow::Resu
                     .ok_or_else(|| anyhow::anyhow!("redirect without Location"))?
                     .to_string();
             }
-            401 => anyhow::bail!("GitHub rejected the token (401)"),
+            401 => anyhow::bail!("GitHub rejected the optional token (401) — remove it or refresh it; public releases need no token"),
             s => anyhow::bail!("download failed with status {s}"),
         }
     }
@@ -469,9 +508,12 @@ mod tests {
     #[test]
     fn token_from_file_reads_first_line() {
         let mut f = tempfile::NamedTempFile::new().unwrap();
-        writeln!(f, "  ghp_secret123  ").unwrap();
+        writeln!(f, "  test_token_fixture  ").unwrap();
         writeln!(f, "second line").unwrap();
-        assert_eq!(token_from_file(f.path()), Some("ghp_secret123".to_string()));
+        assert_eq!(
+            token_from_file(f.path()),
+            Some("test_token_fixture".to_string())
+        );
     }
 
     #[test]
@@ -490,14 +532,38 @@ mod tests {
     }
 
     #[test]
-    fn pick_exe_asset_selects_first_exe() {
+    fn pick_install_asset_prefers_setup_exe_for_arch() {
+        let assets = serde_json::json!([
+            {"name": "quicmic-x86_64-pc-windows-msvc.zip", "url": "https://api.github.com/z"},
+            {"name": "quicmic-x86_64-pc-windows-msvc-setup.exe", "url": "https://api.github.com/s"},
+            {"name": "quicmic-aarch64-pc-windows-msvc-setup.exe", "url": "https://api.github.com/sa"},
+        ]);
+        let picked = pick_install_asset(assets.as_array().unwrap());
+        if std::env::consts::ARCH == "x86_64" {
+            assert_eq!(
+                picked,
+                Some((
+                    "quicmic-x86_64-pc-windows-msvc-setup.exe".to_string(),
+                    "https://api.github.com/s".to_string()
+                ))
+            );
+        } else {
+            // On other archs the x86_64 setup exe must never win silently.
+            assert_ne!(
+                picked.as_ref().map(|(n, _)| n.as_str()),
+                Some("quicmic-x86_64-pc-windows-msvc-setup.exe")
+            );
+        }
+    }
+
+    #[test]
+    fn pick_install_asset_selects_bare_exe() {
         let assets = serde_json::json!([
             {"name": "quicmic-v0.4.1-windows.zip", "url": "https://api.github.com/z"},
             {"name": "quicmic.exe", "url": "https://api.github.com/a"},
-            {"name": "quicmic-arm64.exe", "url": "https://api.github.com/b"},
         ]);
         assert_eq!(
-            pick_exe_asset(assets.as_array().unwrap()),
+            pick_install_asset(assets.as_array().unwrap()),
             Some((
                 "quicmic.exe".to_string(),
                 "https://api.github.com/a".to_string()
@@ -506,23 +572,22 @@ mod tests {
     }
 
     #[test]
-    fn pick_exe_asset_none_when_no_exe() {
-        // v0.4.1 shipped only a .zip: the updater must report "no .exe asset"
-        // clearly, never download the zip as if it were the exe.
+    fn pick_install_asset_none_when_no_installable() {
+        // Zip-only release: report clearly, never download the zip as the exe.
         let assets = serde_json::json!([
             {"name": "quicmic-v0.4.1-windows.zip", "url": "https://api.github.com/z"},
             {"name": "notes.txt", "url": "https://api.github.com/t"},
         ]);
-        assert_eq!(pick_exe_asset(assets.as_array().unwrap()), None);
-        assert_eq!(pick_exe_asset(&[]), None);
+        assert_eq!(pick_install_asset(assets.as_array().unwrap()), None);
+        assert_eq!(pick_install_asset(&[]), None);
     }
 
     #[test]
-    fn pick_exe_asset_rejects_exe_suffixed_archives() {
+    fn pick_install_asset_rejects_exe_suffixed_archives() {
         let assets = serde_json::json!([
             {"name": "quicmic.exe.zip", "url": "https://api.github.com/z"},
         ]);
-        assert_eq!(pick_exe_asset(assets.as_array().unwrap()), None);
+        assert_eq!(pick_install_asset(assets.as_array().unwrap()), None);
     }
 
     #[test]
