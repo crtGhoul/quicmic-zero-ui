@@ -8,7 +8,7 @@ cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["nsis"]
+installers = ["msi"]
 # Target platforms to build apps for (Rust target-triple syntax): x86_64 + arm64
 # for Linux, Windows, and macOS. The lock-free ring buffer and resampler are
 # already tuned for weak-memory-model (ARM) CPUs, so arm64 is a first-class target

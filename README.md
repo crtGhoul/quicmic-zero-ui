@@ -2,7 +2,7 @@
 
 One Windows app, three screens. Your phone becomes a **wireless mic**, a **file-drop station**, and a **wireless speaker** for your PC — all over your local network. No accounts, no cloud, no app install on the phone.
 
-**Download:** get the latest version from the [releases page](https://github.com/crtGhoul/quicmic-zero-ui/releases/latest). On Windows, download the **NSIS installer** (`...-setup.exe`) — it installs QuicMic, adds a Start Menu shortcut, and includes an uninstaller — or grab the portable `.exe` and just double-click it.
+**Download:** get the latest version from the [releases page](https://github.com/crtGhoul/quicmic-zero-ui/releases/latest). On Windows, download the **`.msi` installer** for your PC (`quicmic-x86_64-pc-windows-msvc.msi` for most PCs) — it installs QuicMic, adds a Start Menu shortcut, and registers an uninstaller — or grab the portable `.zip`, extract it, and double-click the `.exe`.
 
 > QuicMic isn't code-signed yet, so Windows SmartScreen may warn on first run: click **More info → Run anyway**. When Windows Firewall asks, allow it on **Private** networks so your phone can reach it.
 
@@ -35,9 +35,10 @@ The window is interactive — type a command and press Enter while it runs:
 ### Updating
 
 Typing `update` in the console (or the GUI's update button) installs the newest
-release in place: it downloads the installer from this repo's GitHub Releases,
-waits for this window to close, swaps the file, and reopens it — you get the
-new version without touching GitHub yourself.
+release in place: it downloads the Windows installer from this repo's GitHub
+Releases and hands it to Windows Installer, then closes so the installer can
+replace it. When the installer finishes, relaunch QuicMic from the Start Menu
+— you get the new version without touching GitHub yourself.
 
 Releases are public, so **no GitHub token is needed**. If you ever hit GitHub
 API rate limits, you can optionally set the `QUICMIC_GITHUB_TOKEN` environment

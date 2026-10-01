@@ -109,7 +109,14 @@ pub async fn run_update() -> anyhow::Result<bool> {
         rel.tag, rel.asset_name
     );
     let exe = std::env::current_exe()?;
-    let dest = exe.with_extension("exe.new");
+    let is_msi = rel.asset_name.to_ascii_lowercase().ends_with(".msi");
+    // An .msi isn't swapped over the running exe like the .exe payload — it
+    // goes to %TEMP% and Windows Installer takes over from there.
+    let dest = if is_msi {
+        std::env::temp_dir().join(format!("quicmic-update-{}.msi", rel.tag))
+    } else {
+        exe.with_extension("exe.new")
+    };
     let bytes = tokio::time::timeout(
         DOWNLOAD_TIMEOUT,
         download_asset(&rel.asset_api_url, token.as_deref(), &dest),
@@ -120,8 +127,17 @@ pub async fn run_update() -> anyhow::Result<bool> {
 
     #[cfg(windows)]
     {
-        stage_self_update(&dest)?;
-        println!("Update staged — restarting into the new version…");
+        if is_msi {
+            stage_msi_install(&dest)?;
+            println!(
+                "Update staged — Windows Installer is taking over. QuicMic will now close \
+                 so the installer can replace it; relaunch QuicMic from the Start Menu \
+                 when the installer finishes."
+            );
+        } else {
+            stage_self_update(&dest)?;
+            println!("Update staged — restarting into the new version…");
+        }
         Ok(true)
     }
     // Non-Windows never reaches here (the `cfg!` gate above returned), but the
@@ -181,7 +197,7 @@ async fn latest_release(token: Option<&str>) -> anyhow::Result<ReleaseInfo> {
         .and_then(|assets| pick_install_asset(assets))
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "latest release {tag} has no installable Windows asset (looked for an NSIS                  setup .exe/.msi or a bare .exe for this PC's architecture) — zip-only                  releases can't self-update; download the installer manually from                  https://github.com/{REPO}/releases/latest"
+                "latest release {tag} has no installable Windows asset (looked for a setup .exe, an .msi installer, or a bare .exe for this PC's architecture) — zip-only releases can't self-update; download the installer manually from https://github.com/{REPO}/releases/latest"
             )
         })?;
     Ok(ReleaseInfo {
@@ -209,13 +225,13 @@ fn name_matches_arch(lower_name: &str) -> bool {
 /// Pick the release asset to install. Pure, so it is unit-testable. Returns
 /// `(name, api_url)`.
 ///
-/// cargo-dist ships archives and (with the NSIS installer enabled) a Windows
-/// setup program — not the bare portable `.exe` this updater swaps in place.
-/// Preference order:
-/// 1. an NSIS/setup `.exe` for this PC's architecture (`…-setup.exe`),
-/// 2. a bare `.exe` for this architecture,
-/// 3. a setup `.msi`,
-/// 4. any remaining bare `.exe` (last resort when arch is unmarked).
+/// cargo-dist ships archives plus a Windows MSI installer — not the bare
+/// portable `.exe` this updater swaps in place. Preference order:
+/// 1. a setup `.exe` for this PC's architecture (`…-setup.exe`),
+/// 2. an `.msi` installer for this architecture (`quicmic-<triple>.msi`),
+/// 3. a bare `.exe` for this architecture,
+/// 4. any `.msi` (last resort when arch is unmarked),
+/// 5. any remaining bare `.exe`.
 ///
 /// A name like `quicmic.exe.zip` never qualifies — archives can't be swapped
 /// over the running exe, and a zip-only release yields `None` so the caller
@@ -232,8 +248,9 @@ fn pick_install_asset(assets: &[serde_json::Value]) -> Option<(String, String)> 
         })
     };
     named(&|n| n.contains("setup") && n.ends_with(".exe") && name_matches_arch(n))
+        .or_else(|| named(&|n| n.ends_with(".msi") && name_matches_arch(n)))
         .or_else(|| named(&|n| n.ends_with(".exe") && !n.contains("setup") && name_matches_arch(n)))
-        .or_else(|| named(&|n| n.contains("setup") && n.ends_with(".msi")))
+        .or_else(|| named(&|n| n.ends_with(".msi")))
         .or_else(|| named(&|n| n.ends_with(".exe") && !n.contains("setup")))
 }
 
@@ -242,6 +259,12 @@ fn pick_install_asset(assets: &[serde_json::Value]) -> Option<(String, String)> 
 /// (an HTML 404 body saved as the "exe") before they can be staged.
 fn looks_like_pe(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == b'M' && bytes[1] == b'Z'
+}
+
+/// Cheap integrity gate for a downloaded `.msi`: every MSI is an OLE2
+/// compound file, which starts with this 8-byte signature.
+fn looks_like_msi(bytes: &[u8]) -> bool {
+    bytes.len() >= 8 && bytes[..8] == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
 }
 
 /// Download an asset API URL, following redirects (the API 302s to a signed
@@ -265,9 +288,9 @@ async fn download_asset(api_url: &str, token: Option<&str>, dest: &Path) -> anyh
                 // Never stage something that isn't an executable: a truncated
                 // download or a mis-served error page must fail here, loudly,
                 // rather than replace the working exe with garbage.
-                if !looks_like_pe(&body) {
+                if !looks_like_pe(&body) && !looks_like_msi(&body) {
                     anyhow::bail!(
-                        "downloaded asset is not a Windows executable ({} bytes, no MZ header) — not staging it",
+                        "downloaded asset is not a Windows executable or installer ({} bytes, no MZ/MSI header) — not staging it",
                         body.len()
                     );
                 }
@@ -470,6 +493,24 @@ fn stage_self_update(new_exe: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Hand a downloaded `.msi` to Windows Installer (passive UI: progress bar,
+/// no prompts beyond a possible UAC consent) and let it replace the install.
+/// The caller quits right after, so no QuicMic file is locked when the
+/// installer runs. Unlike the exe swap there is no automatic relaunch — the
+/// user reopens QuicMic from the Start Menu when the installer finishes.
+#[cfg(windows)]
+fn stage_msi_install(msi: &Path) -> anyhow::Result<()> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x00000008;
+    std::process::Command::new("msiexec")
+        .args(["/i"])
+        .arg(msi)
+        .args(["/passive", "/norestart"])
+        .creation_flags(DETACHED_PROCESS)
+        .spawn()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -597,6 +638,40 @@ mod tests {
         assert!(!looks_like_pe(b"M"));
         // An HTML error page served with a 200 must not pass as an exe.
         assert!(!looks_like_pe(b"<html>not found</html>"));
+    }
+
+    #[test]
+    fn looks_like_msi_checks_ole2_magic() {
+        assert!(looks_like_msi(&[
+            0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00
+        ]));
+        assert!(!looks_like_msi(b"MZ\x90\x00rest of a pe"));
+        assert!(!looks_like_msi(b""));
+    }
+
+    #[test]
+    fn pick_install_asset_prefers_msi_for_arch() {
+        let assets = serde_json::json!([
+            {"name": "quicmic-x86_64-pc-windows-msvc.zip", "url": "https://api.github.com/z"},
+            {"name": "quicmic-x86_64-pc-windows-msvc.msi", "url": "https://api.github.com/m"},
+            {"name": "quicmic-aarch64-pc-windows-msvc.msi", "url": "https://api.github.com/ma"},
+        ]);
+        let picked = pick_install_asset(assets.as_array().unwrap());
+        if std::env::consts::ARCH == "x86_64" {
+            assert_eq!(
+                picked,
+                Some((
+                    "quicmic-x86_64-pc-windows-msvc.msi".to_string(),
+                    "https://api.github.com/m".to_string()
+                ))
+            );
+        } else {
+            // On other archs the x86_64 .msi must never win silently.
+            assert_ne!(
+                picked.as_ref().map(|(n, _)| n.as_str()),
+                Some("quicmic-x86_64-pc-windows-msvc.msi")
+            );
+        }
     }
 
     #[test]
