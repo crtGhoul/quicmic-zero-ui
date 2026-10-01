@@ -2,6 +2,7 @@
 name = "quicmic"
 version = "0.4.2"
 edition = "2021"
+authors = ["crtGhoul"]
 description = "Turn any device with a microphone and a web browser into a wireless PC microphone over WebTransport"
 license = "GPL-3.0-or-later"
 readme = "README.md"
@@ -22,6 +23,12 @@ exclude = [
     "cliff.toml",
     ".gitignore",
 ]
+
+[package.metadata.wix]
+upgrade-guid = "99A5D017-94BE-4CD2-9B6D-D92E0B00E7F4"
+path-guid = "1BE1861C-BA69-4079-AF05-E5FB24DD4857"
+license = false
+eula = false
 
 [dependencies]
 # Pure-Rust RNNoise port: speech-focused noise cancellation (Gate 5).
