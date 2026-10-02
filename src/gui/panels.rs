@@ -385,6 +385,30 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
         );
     }
 
+    section(ui, "Noise cancellation");
+    let mut nc = app.g.stream.denoiser.lock().enabled();
+    if ui
+        .add(egui::Checkbox::new(
+            &mut nc,
+            "Speech-focused noise cancellation (RNNoise)",
+        ))
+        .changed()
+    {
+        app.g.stream.denoiser.lock().set_enabled(nc);
+        app.notify(if nc {
+            "Noise cancellation on."
+        } else {
+            "Noise cancellation off."
+        });
+    }
+    ui.label(
+        RichText::new(
+            "Passes human voice, suppresses background noise. It does not identify a specific person.",
+        )
+        .weak()
+        .small(),
+    );
+
     section(ui, "Mic input name (what Discord lists)");
     // Runtime rename-mode selector. Auto renames the endpoint to the paired
     // phone's name on every pairing; Fixed uses the name below; Off never
