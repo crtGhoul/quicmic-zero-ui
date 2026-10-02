@@ -100,7 +100,7 @@ fn lan_addr_rank(ip: IpAddr) -> u8 {
 /// ranked. Keep this list conservative: a false positive only demotes an
 /// equally-ranked candidate, never the only candidate.
 fn is_virtual_adapter(name: &str) -> bool {
-    const KEYWORDS: [&str; 12] = [
+    const KEYWORDS: [&str; 20] = [
         "vethernet",
         "wsl",
         "docker",
@@ -113,6 +113,17 @@ fn is_virtual_adapter(name: &str) -> bool {
         "tun",
         "tap",
         "awdl",
+        // VPN clients: while connected, the tunnel owns the default route, so
+        // without these the tunnel address (e.g. ProtonVPN's 10.2.0.2) would
+        // be trusted as "the" LAN IP even though no LAN peer can route to it.
+        "vpn",
+        "wireguard",
+        "nordlynx",
+        "mullvad",
+        "surfshark",
+        "windscribe",
+        "tunnelbear",
+        "hotspotshield",
     ];
     let n = name.to_ascii_lowercase();
     KEYWORDS.iter().any(|k| n.contains(k))
@@ -136,24 +147,40 @@ fn pick_lan_ip(ifas: Vec<(String, IpAddr)>) -> Option<IpAddr> {
         .map(|(_, ip)| ip)
 }
 
+/// Whether the default-route pick should be trusted, given the interface
+/// scan. Pure so it is unit-testable: the pick is trusted only when it is a
+/// usable LAN address AND the interface owning it doesn't look virtual (a VPN
+/// tunnel owning the default route hands out usable-looking private addresses
+/// that no LAN peer can route to).
+fn trust_default_pick(ip: IpAddr, ifas: &[(String, IpAddr)]) -> bool {
+    !is_unusable_lan_addr(ip)
+        && !ifas
+            .iter()
+            .any(|(name, addr)| *addr == ip && is_virtual_adapter(name))
+}
+
 /// Detect an IP address that other devices on the LAN can actually reach.
 ///
 /// `local_ip_address::local_ip()` returns the first IPv4 unicast address among
 /// the adapters that own a default route. That is usually right, but goes wrong
 /// when a proxy TUN in fake-ip mode (mihomo/Clash, sing-box, Surge, etc.) owns
 /// a default route with a low metric: the TUN's fake address (198.18.0.1) wins
-/// even though nothing on the LAN can route to it. So the default-route pick is
-/// trusted only
-/// when it is a usable LAN address; otherwise every interface is scanned and the
-/// best-ranked candidate (typically the real Ethernet/Wi-Fi address) is used.
+/// even though nothing on the LAN can route to it. The same happens with a VPN
+/// client tunnel (e.g. ProtonVPN's 10.2.0.2): a real private address, owned by
+/// the default route, unreachable from the LAN. So the default-route pick is
+/// trusted only when it is a usable LAN address on a non-virtual interface;
+/// otherwise every interface is scanned and the best-ranked candidate
+/// (typically the real Ethernet/Wi-Fi address) is used.
 fn detect_lan_ip() -> anyhow::Result<IpAddr> {
+    // Enumerated once: it both vets the default-route pick's interface and
+    // feeds the fallback scan.
+    let ifas = local_ip_address::list_afinet_netifas()
+        .map_err(|e| anyhow::anyhow!("Failed to enumerate network interfaces: {e}"))?;
     if let Ok(ip) = local_ip_address::local_ip() {
-        if !is_unusable_lan_addr(ip) {
+        if trust_default_pick(ip, &ifas) {
             return Ok(ip);
         }
     }
-    let ifas = local_ip_address::list_afinet_netifas()
-        .map_err(|e| anyhow::anyhow!("Failed to enumerate network interfaces: {e}"))?;
     pick_lan_ip(ifas)
         .ok_or_else(|| anyhow::anyhow!("No usable LAN address found among the network interfaces"))
 }
@@ -1152,8 +1179,8 @@ fn pause_before_exit() {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_unusable_lan_addr, lan_addr_rank, noise_gate_db_to_linear, parse_ip_arg, pick_lan_ip,
-        url_host,
+        is_unusable_lan_addr, is_virtual_adapter, lan_addr_rank, noise_gate_db_to_linear,
+        parse_ip_arg, pick_lan_ip, trust_default_pick, url_host,
     };
     use std::net::IpAddr;
 
@@ -1296,6 +1323,52 @@ mod tests {
         );
         assert_eq!(url_host(&"::1".parse::<IpAddr>().unwrap()), "[::1]");
         assert_eq!(url_host(&"fe80::1".parse::<IpAddr>().unwrap()), "[fe80::1]");
+    }
+
+    #[test]
+    fn virtual_adapter_keywords_catch_vpn_clients() {
+        // The reported bug: ProtonVPN's tunnel owns the default route and its
+        // 10.2.0.2 address was trusted as the LAN IP.
+        assert!(is_virtual_adapter("ProtonVPN"));
+        assert!(is_virtual_adapter("ProtonVPN TUN"));
+        assert!(is_virtual_adapter("WireGuard Tunnel"));
+        assert!(is_virtual_adapter("NordLynx"));
+        assert!(is_virtual_adapter("Mullvad"));
+        assert!(is_virtual_adapter("Surfshark"));
+        // Physical adapters stay trusted.
+        assert!(!is_virtual_adapter("Wi-Fi"));
+        assert!(!is_virtual_adapter("Ethernet"));
+        assert!(!is_virtual_adapter("wlan0"));
+    }
+
+    #[test]
+    fn default_pick_distrusted_when_owned_by_vpn_tunnel() {
+        // The reported scenario: default route → ProtonVPN 10.2.0.2, real
+        // Wi-Fi → 192.168.68.104. The tunnel pick must not be trusted, while
+        // the Wi-Fi pick is.
+        let ifas = vec![
+            ("ProtonVPN".to_string(), v4(10, 2, 0, 2)),
+            ("Wi-Fi".to_string(), v4(192, 168, 68, 104)),
+        ];
+        assert!(!trust_default_pick(v4(10, 2, 0, 2), &ifas));
+        assert!(trust_default_pick(v4(192, 168, 68, 104), &ifas));
+        // An unusable pick is never trusted, regardless of interface.
+        assert!(!trust_default_pick(v4(198, 18, 0, 1), &ifas));
+        // A pick with no matching interface entry (shouldn't happen) is
+        // trusted when usable — same as the old behaviour.
+        assert!(trust_default_pick(v4(192, 168, 1, 7), &[]));
+    }
+
+    #[test]
+    fn picker_prefers_wifi_over_vpn_tunnel_on_same_rank() {
+        // Full fallback path for the reported scenario: both addresses are
+        // RFC 1918 (same rank), so the virtual-adapter tie-break must elect
+        // the Wi-Fi address.
+        let ifas = vec![
+            ("ProtonVPN".to_string(), v4(10, 2, 0, 2)),
+            ("Wi-Fi".to_string(), v4(192, 168, 68, 104)),
+        ];
+        assert_eq!(pick_lan_ip(ifas), Some(v4(192, 168, 68, 104)));
     }
 
     #[test]
