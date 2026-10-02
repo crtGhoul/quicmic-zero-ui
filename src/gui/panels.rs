@@ -31,6 +31,30 @@ fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(2.0);
 }
 
+/// Spawn the hear-yourself monitor supervisor on demand (the "Hear how I
+/// sound" button). Plays the mic ring through the PC's default physical
+/// output — never the virtual-mic cable, so it can't echo into calls.
+fn spawn_hear_yourself(stream: &crate::server::StreamState) -> anyhow::Result<()> {
+    let ring = stream
+        .monitor_ring
+        .clone()
+        .expect("monitor ring always exists");
+    // Drain any stale mic audio so the first thing heard is live, not a
+    // burst of buffered samples from before the button was pressed.
+    let mut discard = [0i16; 256];
+    while ring.pop(&mut discard) > 0 {}
+    let monitor_ok = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    crate::audio::spawn_output_supervisor(
+        std::sync::Arc::new(parking_lot::Mutex::new(None::<String>)),
+        ring,
+        stream.source_sample_rate.clone(),
+        stream.latency_threshold.clone(),
+        stream.output_volume.clone(),
+        Some(stream.monitor_enabled.clone()),
+        monitor_ok,
+    )
+}
+
 fn status_dot(connected: bool) -> RichText {
     if connected {
         RichText::new("● Connected").color(egui::Color32::from_rgb(80, 200, 120))
@@ -133,7 +157,7 @@ pub(super) fn status(_app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             "Muted (toggle in Settings)."
         }
     } else {
-        "Not enabled — restart with --monitor-device to create it."
+        "Not enabled — press \"Hear how I sound\" in Settings to create it."
     });
 
     section(ui, "File sharing");
@@ -360,28 +384,38 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
     );
 
     section(ui, "Hear-yourself monitor");
-    let mut monitor = snap.monitor_enabled;
-    ui.add_enabled(
-        snap.monitor_present,
-        egui::Checkbox::new(&mut monitor, "Monitor audible"),
-    );
-    if monitor != snap.monitor_enabled && snap.monitor_present {
-        app.g
-            .stream
-            .monitor_enabled
-            .store(monitor, Ordering::Relaxed);
-        app.snap.lock().monitor_enabled = monitor;
-        app.notify(if monitor {
-            "Monitor unmuted."
-        } else {
-            "Monitor muted."
-        });
-    }
-    if !snap.monitor_present {
+    if snap.monitor_present {
+        let mut monitor = snap.monitor_enabled;
+        ui.add(egui::Checkbox::new(&mut monitor, "Monitor audible"));
+        if monitor != snap.monitor_enabled {
+            app.g
+                .stream
+                .monitor_enabled
+                .store(monitor, Ordering::Relaxed);
+            app.snap.lock().monitor_enabled = monitor;
+            app.notify(if monitor {
+                "Monitor unmuted."
+            } else {
+                "Monitor muted."
+            });
+        }
+    } else {
+        if ui.button("Hear how I sound").clicked() {
+            match spawn_hear_yourself(&app.g.stream) {
+                Ok(()) => {
+                    app.g.stream.monitor_spawned.store(true, Ordering::SeqCst);
+                    app.g.stream.monitor_enabled.store(true, Ordering::Relaxed);
+                    app.notify("Hear-yourself on — headphones recommended to avoid feedback.");
+                }
+                Err(e) => app.notify(format!("Couldn't start hear-yourself: {e:#}")),
+            }
+        }
         ui.label(
-            RichText::new("No monitor stream — restart with --monitor-device to enable it.")
-                .weak()
-                .small(),
+            RichText::new(
+                "Plays your mic through this PC's speakers or headphones so you can hear how you sound. Use headphones — speakers can feed back into the mic.",
+            )
+            .weak()
+            .small(),
         );
     }
 

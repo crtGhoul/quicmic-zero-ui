@@ -26,10 +26,10 @@ pub struct StreamState {
     /// stream and the hear-yourself monitor stream. Adjustable at runtime via
     /// `POST /api/settings` (and the phone's settings panel).
     pub output_volume: Arc<AtomicU32>, // f32::to_bits(), 1.0 = unity
-    /// Second ring feeding the hear-yourself monitor stream, enabled at startup
-    /// via `--monitor-device`. `None` when the monitor is off; the decode hot
-    /// path pushes to both rings only when this is `Some`, keeping each ring's
-    /// SPSC contract intact.
+    /// Second ring feeding the hear-yourself monitor stream. Always present
+    /// (cheap buffer); the monitor *stream* itself is created at startup via
+    /// `--monitor-device` or on demand from the PC UI. The decode hot path
+    /// pushes to both rings, keeping each ring's SPSC contract intact.
     /// Speech-focused noise cancellation state (RNNoise + voice gate),
     /// applied on the network receive path before samples enter the ring.
     /// `None`-free by design: the denoiser itself carries the on/off setting
@@ -42,6 +42,10 @@ pub struct StreamState {
     /// `POST /api/monitor`. Checked in the monitor output callback: `true` =
     /// audible. Defaults to `true` when the monitor stream is created.
     pub monitor_enabled: Arc<AtomicBool>,
+    /// Whether the hear-yourself monitor supervisor thread is running. Set at
+    /// startup when `--monitor-device` is given, or later when the PC UI's
+    /// "Hear how I sound" button spawns it on demand.
+    pub monitor_spawned: Arc<AtomicBool>,
     pub packets_received: Arc<AtomicU64>,
     pub packets_lost: Arc<AtomicU64>,
     pub source_sample_rate: Arc<AtomicU32>, // Client's actual capture rate

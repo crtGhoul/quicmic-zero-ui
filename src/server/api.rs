@@ -102,8 +102,8 @@ pub(super) struct SettingsResponse {
     noise_cancellation: bool,
     /// Voice-activity probability threshold (0.0–1.0) for the NC gate.
     nc_vad_threshold: f32,
-    /// Whether a hear-yourself monitor stream exists (i.e. the server was
-    /// started with `--monitor-device`).
+    /// Whether a hear-yourself monitor stream exists (created at startup via
+    /// `--monitor-device`, or on demand from the PC UI's "Hear how I sound").
     monitor_available: bool,
     /// Whether the monitor stream is currently audible.
     monitor_enabled: bool,
@@ -117,8 +117,9 @@ pub(super) struct MonitorUpdate {
 
 #[derive(Serialize)]
 pub(super) struct MonitorResponse {
-    /// Whether a monitor stream exists (the server was started with
-    /// `--monitor-device`). Toggling is a no-op when this is false.
+    /// Whether a monitor stream exists (created at startup via
+    /// `--monitor-device`, or on demand from the PC UI). Toggling is a no-op
+    /// when this is false.
     available: bool,
     /// Current audibility of the monitor stream.
     enabled: bool,
@@ -370,7 +371,7 @@ fn settings_response(state: &AppState) -> SettingsResponse {
         gain: f32::from_bits(state.stream.gain.load(Ordering::Relaxed)),
         latency_threshold: state.stream.latency_threshold.load(Ordering::Relaxed),
         output_volume: f32::from_bits(state.stream.output_volume.load(Ordering::Relaxed)),
-        monitor_available: state.stream.monitor_ring.is_some(),
+        monitor_available: state.stream.monitor_spawned.load(Ordering::Relaxed),
         monitor_enabled: state.stream.monitor_enabled.load(Ordering::Relaxed),
     }
 }
@@ -445,9 +446,10 @@ pub(super) async fn handle_update_settings(
 /// POST /api/monitor — Mute/unmute the hear-yourself monitor stream.
 ///
 /// Requires a valid session token in the body (same as `POST /api/settings`).
-/// The monitor stream itself is created at startup via `--monitor-device`; this
-/// only toggles whether it is audible. When no monitor stream exists
-/// (`available: false`) the toggle is accepted but is a no-op.
+/// The monitor stream itself is created at startup via `--monitor-device` or
+/// on demand from the PC UI's "Hear how I sound" button; this only toggles
+/// whether it is audible. When no monitor stream exists (`available: false`)
+/// the toggle is accepted but is a no-op.
 pub(super) async fn handle_monitor(
     State(state): State<AppState>,
     Json(body): Json<MonitorUpdate>,

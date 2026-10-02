@@ -178,7 +178,6 @@ pub struct Ctx {
     /// Only the Windows capture path reads it.
     #[cfg_attr(not(windows), allow(dead_code))]
     pub speaker_generation: Arc<AtomicU64>,
-    pub monitor_present: bool,
     /// The phone's self-reported device name from the last pairing.
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
     /// How the capture endpoint's display name is managed. Shared with the
@@ -336,14 +335,14 @@ pub fn print_status(ctx: &Ctx) {
     ));
     let latency = ctx.stream.latency_threshold.load(Ordering::Relaxed);
     let device_ok = ctx.stream.device_ok.load(Ordering::Relaxed);
-    let monitor = if ctx.monitor_present {
+    let monitor = if ctx.stream.monitor_spawned.load(Ordering::Relaxed) {
         if ctx.stream.monitor_enabled.load(Ordering::Relaxed) {
             "on"
         } else {
             "muted"
         }
     } else {
-        "n/a (restart with --monitor-device)"
+        "n/a (PC UI \"Hear how I sound\" button, or restart with --monitor-device)"
     };
 
     println!();
@@ -580,8 +579,8 @@ pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
             _ => println!("Usage: latency <0-500>  (ms, 0 = disabled)"),
         },
         "monitor" => {
-            if !ctx.monitor_present {
-                println!("No monitor stream — restart with --monitor-device to enable it.");
+            if !ctx.stream.monitor_spawned.load(Ordering::Relaxed) {
+                println!("No monitor stream — press \"Hear how I sound\" in the PC UI, or restart with --monitor-device to enable it.");
             } else {
                 match arg.to_ascii_lowercase().as_str() {
                     "on" => {

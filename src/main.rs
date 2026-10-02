@@ -381,13 +381,14 @@ async fn run() -> anyhow::Result<()> {
             .clamp(server::OUTPUT_VOLUME_MIN, server::OUTPUT_VOLUME_MAX)
             .to_bits(),
     ));
-    // The hear-yourself monitor stream only exists when --monitor-device was
-    // given; the phone UI can mute/unmute it at runtime via /api/monitor.
+    // The hear-yourself monitor ring always exists now (cheap buffer); the
+    // monitor *stream* is created at startup via --monitor-device, or later
+    // on demand from the PC UI's "Hear how I sound" button. The phone UI can
+    // mute/unmute it at runtime via /api/monitor.
     let monitor_enabled = Arc::new(AtomicBool::new(true));
-    let monitor_ring: Option<Arc<audio::RingBuffer>> = cli
-        .monitor_device
-        .as_ref()
-        .map(|_| Arc::new(audio::RingBuffer::new(RING_BUFFER_SAMPLES)));
+    let monitor_spawned = Arc::new(AtomicBool::new(false));
+    let monitor_ring: Arc<audio::RingBuffer> =
+        Arc::new(audio::RingBuffer::new(RING_BUFFER_SAMPLES));
     let latency_threshold = Arc::new(AtomicU32::new(
         cli.latency_threshold.min(server::LATENCY_THRESHOLD_MAX_MS),
     ));
@@ -425,15 +426,14 @@ async fn run() -> anyhow::Result<()> {
         let monitor_ok = Arc::new(AtomicBool::new(false));
         audio::spawn_output_supervisor(
             Arc::new(parking_lot::Mutex::new(monitor_name)),
-            monitor_ring
-                .clone()
-                .expect("monitor ring exists when --monitor-device is given"),
+            monitor_ring.clone(),
             source_sample_rate.clone(),
             latency_threshold.clone(),
             output_volume.clone(),
             Some(monitor_enabled.clone()),
             monitor_ok,
         )?;
+        monitor_spawned.store(true, Ordering::SeqCst);
         warn!(
             "Monitor enabled: your mic audio now also plays through a physical output \
              device. Speakers + a live mic can feed back — headphones recommended. \
@@ -576,8 +576,9 @@ async fn run() -> anyhow::Result<()> {
         latency_threshold: latency_threshold.clone(),
         output_volume: output_volume.clone(),
         denoiser: Arc::new(parking_lot::Mutex::new(audio::SpeechDenoiser::default())),
-        monitor_ring: monitor_ring.clone(),
+        monitor_ring: Some(monitor_ring.clone()),
         monitor_enabled: monitor_enabled.clone(),
+        monitor_spawned: monitor_spawned.clone(),
         packets_received: packets_received.clone(),
         packets_lost: packets_lost.clone(),
         source_sample_rate: source_sample_rate.clone(),
@@ -657,7 +658,6 @@ async fn run() -> anyhow::Result<()> {
 
     // ── Build axum app ──────────────────────────────────────────────────
     // Captured before the moves below for the console context.
-    let monitor_present = monitor_ring.is_some();
     // Lets /api/update ask the main task to shut down after staging a new
     // exe, so the updater batch can swap and restart.
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -742,7 +742,6 @@ async fn run() -> anyhow::Result<()> {
             speaker_running: speaker_running.clone(),
             speaker_test_tone: cli.speaker_test_tone,
             speaker_device: speaker_device.clone(),
-            monitor_present,
             phone_device_name: phone_device_name.clone(),
             mic_rename_mode: mic_rename_mode.clone(),
             applied_mic_name: applied_mic_name.clone(),
@@ -785,7 +784,6 @@ async fn run() -> anyhow::Result<()> {
         speaker_test_tone: cli.speaker_test_tone,
         speaker_device: speaker_device.clone(),
         speaker_generation: speaker_generation.clone(),
-        monitor_present,
         phone_device_name,
         mic_rename_mode,
         applied_mic_name,

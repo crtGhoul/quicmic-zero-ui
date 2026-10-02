@@ -47,7 +47,6 @@ pub struct GuiCtx {
     pub speaker_running: Arc<AtomicBool>,
     pub speaker_test_tone: bool,
     pub speaker_device: Arc<parking_lot::Mutex<Option<String>>>,
-    pub monitor_present: bool,
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
     /// How the capture endpoint's display name is managed. Shared with the
     /// server so the Settings tab can switch auto/off/fixed at runtime; the
@@ -129,7 +128,6 @@ pub struct PollInputs {
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
-    pub monitor_present: bool,
 }
 
 impl GuiCtx {
@@ -144,7 +142,6 @@ impl GuiCtx {
             phone_device_name: self.phone_device_name.clone(),
             applied_mic_name: self.applied_mic_name.clone(),
             update_status: self.update_status.clone(),
-            monitor_present: self.monitor_present,
         }
     }
 }
@@ -343,7 +340,7 @@ fn poll_snapshot(p: &PollInputs, devices_refresh: &AtomicBool, ticks: u64) -> Sn
         gain: f32::from_bits(s.gain.load(Ordering::Relaxed)),
         volume: f32::from_bits(s.output_volume.load(Ordering::Relaxed)),
         latency_ms: s.latency_threshold.load(Ordering::Relaxed),
-        monitor_present: p.monitor_present,
+        monitor_present: p.stream.monitor_spawned.load(Ordering::Relaxed),
         monitor_enabled: s.monitor_enabled.load(Ordering::Relaxed),
         pin: p.pin.lock().clone(),
         applied_mic_name: p.applied_mic_name.lock().clone(),

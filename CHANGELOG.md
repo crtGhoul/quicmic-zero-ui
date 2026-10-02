@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-10-01
+
+### Added
+- "Hear how I sound" button in the PC app's Settings tab: spawns the hear-yourself monitor on demand through the PC's speakers/headphones (previously required restarting with `--monitor-device`). The phone UI's mute toggle and the `monitor` console command keep working against the same stream.
+
 ## [0.6.1] - 2026-10-01
 
 ### Added
