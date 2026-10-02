@@ -9,13 +9,13 @@ cargo-dist-version = "0.32.0"
 ci = "github"
 # The installers to generate for each app
 installers = ["msi"]
-# Target platforms to build apps for (Rust target-triple syntax): x86_64 + arm64
-# for Linux and Windows only. macOS is not a supported platform (owner's call;
-# the code stays cross-platform so it can come back later). The lock-free ring
-# buffer and resampler are already tuned for weak-memory-model (ARM) CPUs, so
-# arm64 is a first-class target on both OSes.
+# Target platforms to build apps for (Rust target-triple syntax).
+# Windows is x86_64-only: GitHub's ARM64 Windows runners don't ship the WiX
+# Toolset, so the MSI can't build there (and ARM Windows PCs are a tiny niche).
+# Linux keeps both arches — the lock-free ring buffer and resampler are already
+# tuned for weak-memory-model (ARM) CPUs. macOS is not a supported platform
+# (owner's call; the code stays cross-platform so it can come back later).
 targets = [
-    "aarch64-pc-windows-msvc",
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
