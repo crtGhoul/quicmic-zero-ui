@@ -130,9 +130,10 @@ pub async fn run_update() -> anyhow::Result<bool> {
         if is_msi {
             stage_msi_install(&dest)?;
             println!(
-                "Update staged — Windows Installer is taking over. QuicMic will now close \
-                 so the installer can replace it; relaunch QuicMic from the Start Menu \
-                 when the installer finishes."
+                "Update staged — Windows Installer is taking over. If Windows asks for \
+                 permission, accept it: the installer cannot replace QuicMic without it. \
+                 QuicMic will now close so the installer can replace it; relaunch QuicMic \
+                 from the Start Menu when the installer finishes."
             );
         } else {
             stage_self_update(&dest)?;

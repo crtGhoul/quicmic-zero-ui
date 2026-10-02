@@ -156,6 +156,14 @@ impl eframe::App for GuiApp {
         let ctx = ui.ctx().clone();
         let snap = self.snap_now.clone();
 
+        // Surface the self-updater's result: the install button's background
+        // task reports here, so a failed update tells the user what went
+        // wrong instead of silently doing nothing.
+        let update_notice = self.g.update_notice.lock().take();
+        if let Some(msg) = update_notice {
+            self.notify(msg);
+        }
+
         // ── Top bar ────────────────────────────────────────────────
         egui::Panel::top("topbar").show(ui, |ui| {
             ui.horizontal(|ui| {

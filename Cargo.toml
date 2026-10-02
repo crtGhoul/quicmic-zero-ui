@@ -1,6 +1,6 @@
 [package]
 name = "quicmic"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 authors = ["crtGhoul"]
 description = "Turn any device with a microphone and a web browser into a wireless PC microphone over WebTransport"

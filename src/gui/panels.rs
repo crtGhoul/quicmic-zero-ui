@@ -551,6 +551,7 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             app.notify("Downloading the latest release…");
             let shutdown = app.g.shutdown_requested.clone();
             let egui_ctx = app.g.egui_ctx.clone();
+            let notice = app.g.update_notice.clone();
             tokio::spawn(async move {
                 match crate::self_update::run_update().await {
                     Ok(true) => {
@@ -561,8 +562,17 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     }
-                    Ok(false) => {}
-                    Err(e) => tracing::warn!("self-update failed: {e:#}"),
+                    // Reachable if the release check raced the install click;
+                    // say so instead of going quiet.
+                    Ok(false) => {
+                        *notice.lock() = Some("You're already on the latest version.".to_string());
+                    }
+                    // Failures used to vanish into the log, leaving the user
+                    // staring at a version that never changed. Report them.
+                    Err(e) => {
+                        tracing::warn!("self-update failed: {e:#}");
+                        *notice.lock() = Some(format!("Update failed: {e:#}"));
+                    }
                 }
             });
         }

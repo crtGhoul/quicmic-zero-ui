@@ -54,6 +54,12 @@ pub struct GuiCtx {
     pub mic_rename_mode: Arc<parking_lot::Mutex<MicRenameMode>>,
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
+    /// Carries the self-updater's result back to the UI thread: the install
+    /// button's background task writes either an error or an informational
+    /// message here, and `GuiApp::ui` drains it into the transient status
+    /// line. Without this, update failures were only `tracing::warn!`ed —
+    /// invisible in the GUI, so a failed update looked like "nothing happened".
+    pub update_notice: Arc<parking_lot::Mutex<Option<String>>>,
     pub port: u16,
     pub lan_ip: String,
     /// Whether the startup update check ran (false with `--no-update-check` /

@@ -746,6 +746,7 @@ async fn run() -> anyhow::Result<()> {
             mic_rename_mode: mic_rename_mode.clone(),
             applied_mic_name: applied_mic_name.clone(),
             update_status: update_status.clone(),
+            update_notice: Arc::new(parking_lot::Mutex::new(None)),
             port: cli.port,
             lan_ip: lan_ip.to_string(),
             update_check_ran,
