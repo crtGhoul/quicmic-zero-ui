@@ -70,6 +70,7 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private Button connectButton;
     private WebView webView;
+    private Button menuFab;
     private PermissionRequest pendingPermissionRequest;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -92,6 +93,25 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT));
         webView.setVisibility(View.GONE);
         root.addView(webView);
+
+        // Floating menu: the NoActionBar theme has no action bar and phones
+        // have no hardware menu key, so the Scan/Disconnect actions would
+        // otherwise be unreachable while the web UI fills the screen.
+        menuFab = new Button(this);
+        menuFab.setText("⋮");
+        menuFab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        menuFab.setTextColor(TEXT);
+        menuFab.setBackgroundColor(0xCC1B2129);
+        menuFab.setAllCaps(false);
+        int fabSize = dp(56);
+        FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(
+                fabSize, fabSize, Gravity.BOTTOM | Gravity.END);
+        int m = dp(16);
+        flp.setMargins(m, m, m, m);
+        menuFab.setLayoutParams(flp);
+        menuFab.setVisibility(View.GONE);
+        menuFab.setOnClickListener(v -> showWebMenu());
+        root.addView(menuFab);
 
         setContentView(root);
 
@@ -315,6 +335,7 @@ public class MainActivity extends Activity {
     private void showWeb() {
         startView.setVisibility(View.GONE);
         webView.setVisibility(View.VISIBLE);
+        menuFab.setVisibility(View.VISIBLE);
         webView.onResume();
         invalidateOptionsMenu();
     }
@@ -323,9 +344,24 @@ public class MainActivity extends Activity {
         webView.onPause();
         webView.loadUrl("about:blank");
         webView.setVisibility(View.GONE);
+        menuFab.setVisibility(View.GONE);
         startView.setVisibility(View.VISIBLE);
         refreshStartView();
         invalidateOptionsMenu();
+    }
+
+    /** Menu for the connected state: rescan a QR or disconnect. */
+    private void showWebMenu() {
+        final String[] items = {"\uD83D\uDCF7 Scan QR code", "Disconnect"};
+        new AlertDialog.Builder(this)
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        startScan();
+                    } else {
+                        showStart();
+                    }
+                })
+                .show();
     }
 
     private boolean isWebShown() {
@@ -369,7 +405,8 @@ public class MainActivity extends Activity {
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED) {
-            request.grant(request.getResources());
+            // Grant audio capture only, even if the page asked for more.
+            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
         } else {
             pendingPermissionRequest = request;
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
@@ -386,7 +423,7 @@ public class MainActivity extends Activity {
             if (req != null) {
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    req.grant(req.getResources());
+                    req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
                 } else {
                     req.deny();
                 }
@@ -438,15 +475,20 @@ public class MainActivity extends Activity {
             }
             fp.append(String.format("%02X", b));
         }
+        // The PC app shows the fingerprint as base64 (Diagnostics tab,
+        // "Cert SHA-256") — show the same encoding so the two can actually be
+        // compared character by character.
+        String fpB64 = Base64.encodeToString(sha256(der), Base64.NO_WRAP);
         final byte[] derFinal = der;
         String title = pinned != null ? "Certificate changed!" : "Trust this QuicMic server?";
         String msg = pinned != null
                 ? "The server's certificate changed. This can mean the PC regenerated "
                 + "its identity — or someone intercepting you. Only trust it if you "
-                + "just reset QuicMic on your PC.\n\nNew fingerprint (SHA-256):\n" + fp
+                + "just reset QuicMic on your PC.\n\nNew fingerprint (SHA-256, base64):\n" + fpB64
                 : "QuicMic uses a self-signed certificate. Compare this fingerprint "
-                + "with the one shown in the PC app's Pair tab — trust it only if "
-                + "they match.\n\nFingerprint (SHA-256):\n" + fp;
+                + "with the one in the PC app's Diagnostics tab (\"Cert SHA-256\") — "
+                + "trust it only if they match exactly.\n\nFingerprint (SHA-256, base64):\n"
+                + fpB64;
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(msg)
@@ -487,6 +529,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (webView != null) {
+            // Detach before destroying: destroying an attached WebView leaks
+            // its render thread on some devices.
+            ViewGroup parent = (ViewGroup) webView.getParent();
+            if (parent != null) {
+                parent.removeView(webView);
+            }
             webView.destroy();
         }
         super.onDestroy();
