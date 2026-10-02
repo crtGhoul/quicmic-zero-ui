@@ -15,10 +15,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
 <link rel="stylesheet" href="drop.css">
 <script src="qrcode.min.js"></script>
+<script src="zip.js"></script>
 </head>
 <body>
 <div class="app">
-  <!-- Shared app nav: Mic / Drop / Speaker switcher (one app, three screens). -->
   <nav class="appnav" aria-label="App sections">
     <a class="appnav-link" href="mic.html">🎤 Mic</a>
     <a class="appnav-link active" href="drop.html" aria-current="page">📦 Drop</a>
@@ -45,6 +45,8 @@
         <span class="card-desc">Join with a code</span>
       </button>
     </div>
+    <button id="installBtn" class="btn primary hidden" style="margin-top:14px">⬇ Install app</button>
+    <p id="iosHint" class="hint hidden">📲 On iPhone: tap <b>Share</b> → <b>Add to Home Screen</b> to install LocalDrop like an app.</p>
 
     <!-- TAP-TO-CONNECT -->
     <section class="panel" id="tapPanel">
@@ -54,28 +56,35 @@
         </label>
         <span id="sigDot" class="sigdot" title="matchmaker status"></span>
       </div>
+      <p class="hint serverline">🔗 Server: <a id="serverLink" href="https://localdrop-l8ly.onrender.com" target="_blank" rel="noopener">localdrop-l8ly.onrender.com</a></p>
+      <label class="privrow"><input type="checkbox" id="privToggle"> 🙈 Private mode <span class="hint">— hide this device from everyone's list</span></label>
       <h3>Nearby &amp; ready</h3>
+      <details class="howto">
+        <summary>How does tap-to-connect work?</summary>
+        <ol>
+          <li>Open this page on <b>both</b> devices (same Wi-Fi works best).</li>
+          <li>Each device shows up in the other's <b>Nearby &amp; ready</b> list — tap one to call it.</li>
+          <li>Accept on the other device. Done — send anything.</li>
+        </ol>
+        <p class="hint">A free matchmaker server just introduces your devices — your photos and files then fly <b>directly</b> between them (WebRTC), never through the server. Devices on your network are marked nearby. Want to stay invisible? Turn on 🙈 Private mode above — you can still call out. First visit of the day can take ~30–60s: the free server sleeps when idle. No devices showing? You can always pair with a Share / Receive code instead.</p>
+      </details>
       <p id="sigNotice" class="hint hidden"></p>
       <div id="rosterList" class="devlist"></div>
       <div id="callState" class="hidden"></div>
       <h3>Known devices</h3>
       <div id="knownList" class="devlist"></div>
       <details class="settings">
-        <summary>⚙️ Settings</summary>
-        <label class="fld"><span>Matchmaker server</span>
+        <summary>⚙️ Matchmaker server</summary>
+        <label class="fld"><span>Server URL</span>
           <input id="serverInput" type="url" inputmode="url" autocomplete="off"
-                 placeholder="wss://your-server.onrender.com">
+                 placeholder="wss://localdrop-l8ly.onrender.com (default)">
         </label>
-        <p class="hint">No server yet? Deploy your own free one — see
-          <b>Tap-to-connect server</b> in the LocalDrop README, then paste the URL here.
-          Without a server you can still use Share / Receive codes below.</p>
-        <label class="check"><input type="checkbox" id="autoConnChk" checked>
-          <span>Auto-connect to matchmaker<small>Join on start when a server URL is saved.</small></span>
-        </label>
-        <label class="check"><input type="checkbox" id="vibrateChk" checked>
-          <span>Vibrate on incoming connection<small>Buzz when another device rings you (Android).</small></span>
-        </label>
-        <p class="hint">Drop engine: <b id="appVersion">v7</b></p>
+        <p class="hint">Blank = use the built-in free server. Want your own instead?
+          <a class="deploylink" href="https://render.com/deploy?repo=https://github.com/crtGhoul/localdrop" target="_blank" rel="noopener">Deploy a free one on Render</a>
+          (takes ~2 minutes), then paste its wss:// URL above — or clear the
+          field to turn tap-to-connect off. Without a server you can still use
+          Share / Receive codes below.</p>
+        <p class="hint">App version: <b id="appVersion">v15</b></p>
       </details>
     </section>
 
@@ -116,10 +125,28 @@
 
   <!-- CHAT -->
   <main id="view-chat" class="view hidden">
-    <button class="back" data-go="home">⏻ disconnect</button>
+    <div class="chathead">
+      <button class="back" data-go="home">⏻ disconnect</button>
+      <div class="headright">
+        <div id="peerLabel" class="peerlabel">…</div>
+        <div id="fileActions" class="fileactions hidden">
+          <button id="btnDlAll" class="btn small" title="Download all received files as one ZIP">⬇ All</button>
+          <button id="btnShareAll" class="btn small hidden" title="Share received files with other apps">📤</button>
+        </div>
+      </div>
+    </div>
     <div id="messages" class="messages"></div>
+    <div id="dropOverlay" class="dropoverlay hidden">
+      <div class="dropcard">
+        <div class="droplogo">📥</div>
+        <div class="droptitle">Drop files to send</div>
+        <div class="dropsub">they go straight to the other device</div>
+      </div>
+    </div>
     <div class="composer">
       <label class="attach" title="Send photo or file">📎<input type="file" id="fileInput" hidden multiple></label>
+      <label class="attach" title="Send a whole folder">📁<input type="file" id="folderInput" hidden webkitdirectory></label>
+      <button class="attachbtn" id="btnClip" title="Send clipboard">📋</button>
       <input id="textInput" type="text" placeholder="Message, link…" autocomplete="off" enterkeyhint="send">
       <button id="btnSend" class="btn primary">Send</button>
     </div>
@@ -138,6 +165,8 @@
     </div>
   </div>
 </div>
+<script src="app.js"></script>
+
 <script src="drop.js"></script>
 </body>
 </html>

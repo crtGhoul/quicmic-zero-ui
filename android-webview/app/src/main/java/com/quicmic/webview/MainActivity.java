@@ -350,13 +350,15 @@ public class MainActivity extends Activity {
         invalidateOptionsMenu();
     }
 
-    /** Menu for the connected state: rescan a QR or disconnect. */
+    /** Menu for the connected state: rescan a QR, refresh, or disconnect. */
     private void showWebMenu() {
-        final String[] items = {"\uD83D\uDCF7 Scan QR code", "Disconnect"};
+        final String[] items = {"\uD83D\uDCF7 Scan QR code", "↻ Refresh page", "Disconnect"};
         new AlertDialog.Builder(this)
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
                         startScan();
+                    } else if (which == 1) {
+                        webView.reload();
                     } else {
                         showStart();
                     }
