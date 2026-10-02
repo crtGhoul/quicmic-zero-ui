@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.quicmic.webview"
-    android:versionCode="1"
+    android:versionCode="2"
     android:versionName="1.0">
+
+    <!-- targetSdkVersion 23+ is REQUIRED: Android 14 and later refuse to
+         install apps targeting older SDKs ("app isn't compatible"). -->
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
