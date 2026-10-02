@@ -44,6 +44,7 @@ public class ScanActivity extends Activity implements SurfaceHolder.Callback {
     private final MultiFormatReader reader = new MultiFormatReader();
     private long lastAttemptMs;
     private boolean finished;
+    private boolean previewStarted;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -101,6 +102,7 @@ public class ScanActivity extends Activity implements SurfaceHolder.Callback {
     protected void onResume() {
         super.onResume();
         finished = false;
+        previewStarted = false;
         openCamera();
     }
 
@@ -135,11 +137,31 @@ public class ScanActivity extends Activity implements SurfaceHolder.Callback {
             }
             camera.setParameters(params);
             camera.setDisplayOrientation(90);
-            if (surfaceView.getHolder().getSurface().isValid()) {
-                camera.setPreviewDisplay(surfaceView.getHolder());
-            }
             camera.setPreviewCallback(previewCallback);
+            // The Surface is created asynchronously: if it isn't valid yet,
+            // surfaceCreated() below starts the preview once it arrives.
+            // Starting the preview without a display surface throws on most
+            // devices, so never call startPreview() until the surface exists.
+            if (surfaceView.getHolder().getSurface().isValid()) {
+                startPreview();
+            }
+        } catch (Exception e) {
+            releaseCamera();
+            Toast.makeText(this, "Couldn't start the camera preview.", Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    /** Attaches the display surface (if needed) and starts the preview. */
+    @SuppressWarnings("deprecation")
+    private void startPreview() {
+        if (camera == null || previewStarted) {
+            return;
+        }
+        try {
+            camera.setPreviewDisplay(surfaceView.getHolder());
             camera.startPreview();
+            previewStarted = true;
         } catch (Exception e) {
             releaseCamera();
             Toast.makeText(this, "Couldn't start the camera preview.", Toast.LENGTH_LONG).show();
@@ -176,14 +198,9 @@ public class ScanActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        // Preview display is attached in openCamera(); if the surface arrived
-        // after the camera opened, attach it now.
-        if (camera != null) {
-            try {
-                camera.setPreviewDisplay(holder);
-            } catch (Exception ignored) {
-            }
-        }
+        // If the camera opened before the surface existed, start the preview
+        // now that the display surface has arrived.
+        startPreview();
     }
 
     @Override
