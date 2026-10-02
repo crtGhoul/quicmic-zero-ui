@@ -39,10 +39,17 @@ $BT/d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
 cp app-base.apk app-unsigned.apk
 (cd dexout && zip -q ../app-unsigned.apk classes.dex)
 $BT/zipalign -f 4 app-unsigned.apk app-aligned.apk
-$BT/apksigner sign --ks ~/.android/debug.keystore \
-  --ks-pass pass:android --key-pass pass:android \
+$BT/apksigner sign --ks ~/workspace/quicmic-release-keys/quicmic-release.keystore \
   --out quicmic-webview.apk app-aligned.apk
 ```
+
+The release keystore at `~/workspace/quicmic-release-keys/` is the signing
+identity for every QuicMic WebView APK — keep it (and its password file)
+forever. All future APK updates must be signed with the same key, or Android
+will refuse to install them as updates (users would have to uninstall first).
+Never commit the keystore to the repo. (An earlier debug-signed APK used the
+throwaway `~/.android/debug.keystore`; it was never installed anywhere and is
+superseded by the release-signed build.)
 
 (Gradle files are included for IDE support; the Gradle daemon had issues in
 this sandbox, so the manual build above is the verified path.)
