@@ -30,6 +30,13 @@ pub struct StreamState {
     /// via `--monitor-device`. `None` when the monitor is off; the decode hot
     /// path pushes to both rings only when this is `Some`, keeping each ring's
     /// SPSC contract intact.
+    /// Speech-focused noise cancellation state (RNNoise + voice gate),
+    /// applied on the network receive path before samples enter the ring.
+    /// `None`-free by design: the denoiser itself carries the on/off setting
+    /// (default on) so there is a single source of truth, adjustable at
+    /// runtime via `POST /api/settings`. The receive path is the only
+    /// producer, so this lock is uncontended in practice.
+    pub denoiser: Arc<parking_lot::Mutex<crate::audio::SpeechDenoiser>>,
     pub monitor_ring: Option<Arc<RingBuffer>>,
     /// Runtime mute for the monitor stream, toggled from the phone UI via
     /// `POST /api/monitor`. Checked in the monitor output callback: `true` =

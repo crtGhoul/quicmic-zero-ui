@@ -8,28 +8,24 @@ cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = []
+installers = ["msi"]
 # Target platforms to build apps for (Rust target-triple syntax): x86_64 + arm64
-# for Linux, Windows, and macOS. The lock-free ring buffer and resampler are
-# already tuned for weak-memory-model (ARM) CPUs, so arm64 is a first-class target
-# across all three OSes. cargo-dist picks current runners per target (e.g.
-# macos-15-intel for x86_64 macOS).
+# for Linux and Windows only. macOS is not a supported platform (owner's call;
+# the code stays cross-platform so it can come back later). The lock-free ring
+# buffer and resampler are already tuned for weak-memory-model (ARM) CPUs, so
+# arm64 is a first-class target on both OSes.
 targets = [
-    "aarch64-apple-darwin",
     "aarch64-pc-windows-msvc",
     "aarch64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
 ]
 # Where to host releases
 hosting = "github"
-# `dist` has no built-in crates.io publisher (it ships binaries, not source
-# packages), so publishing the crate is a custom publish job
-# (.github/workflows/publish-crates.yml). dist runs it at the publish stage — after
-# the binaries are built and the GitHub Release exists — so a failed build never
-# burns an immutable crates.io version. Needs a CARGO_REGISTRY_TOKEN repo secret.
-publish-jobs = ["./publish-crates"]
+# `dist` ships binaries, not source packages; the optional crates.io custom
+# publish job (.github/workflows/publish-crates.yml) is intentionally disabled
+# for the first public release — no CARGO_REGISTRY_TOKEN secret is used.
+# crates.io publishing is disabled for the first public release (re-enable publish-jobs and the custom permission block below once the `quicmic` crate name is claimed and Trusted Publishing is configured).
 
 # Build arm64 Windows natively on GitHub's ARM Windows runner (free for public
 # repos) instead of cargo-dist's default of cross-compiling it from Linux via

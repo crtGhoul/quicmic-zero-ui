@@ -41,4 +41,20 @@ fn main() {
     writeln!(rs, "pub const TRAY_ICON_WIDTH: u32 = {width};").unwrap();
     writeln!(rs, "pub const TRAY_ICON_HEIGHT: u32 = {height};").unwrap();
     std::fs::write(Path::new(&out_dir).join("tray_icon.rs"), rs).expect("write rs");
+
+    // Windows only: embed the app icon into the .exe so Explorer, the taskbar
+    // and the Start Menu show the QuicMic icon. Guarded on the asset existing
+    // (assets/quicmic.ico, generated from web/icons/icon-512.png) so builds
+    // never break before the .ico lands. cfg(windows) matches the target-scoped
+    // winresource build-dependency for native Windows builds.
+    #[cfg(windows)]
+    {
+        let ico = Path::new("assets/quicmic.ico");
+        println!("cargo:rerun-if-changed={}", ico.display());
+        if ico.exists() {
+            let mut res = winresource::WindowsResource::new();
+            res.set_icon(ico.to_str().expect("assets/quicmic.ico path"));
+            res.compile().expect("embed QuicMic icon into the exe");
+        }
+    }
 }

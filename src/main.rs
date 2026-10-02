@@ -575,6 +575,7 @@ async fn run() -> anyhow::Result<()> {
         gain: gain.clone(),
         latency_threshold: latency_threshold.clone(),
         output_volume: output_volume.clone(),
+        denoiser: Arc::new(parking_lot::Mutex::new(audio::SpeechDenoiser::default())),
         monitor_ring: monitor_ring.clone(),
         monitor_enabled: monitor_enabled.clone(),
         packets_received: packets_received.clone(),

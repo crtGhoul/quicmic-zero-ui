@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Speech-focused noise cancellation (PC-side, on by default):** RNNoise (pure-Rust `nnnoiseless`) plus a voice-activity gate now clean the mic audio on the PC before it reaches apps — speech-focused noise cancellation — passes human voice, suppresses background noise; it does not identify a specific person. Frames with no detected speech fade to near-silence with a ~250 ms hangover so word endings aren't clipped; added latency is at most ~20 ms. Toggle/threshold via `/api/settings` (`noise_cancellation`, `nc_vad_threshold`) and the phone's Mic settings drawer. Previously the only noise handling was the phone-side amplitude noise gate in the AudioWorklet — there was no server-side suppression.
+- Windows MSI installer via cargo-dist (Start Menu shortcut + uninstaller); the portable `.zip` remains available. The build embeds `assets/quicmic.ico` into the exe when that asset is present.
+
+### Changed
+- Self-updater now works against the public GitHub Releases with **no token required**; a token (`QUICMIC_GITHUB_TOKEN` / `github_token.txt`) is optional and only raises API rate limits. It also picks the right asset for the machine architecture.
+- `POST /api/update` only accepts requests from the PC itself (loopback); phones now get a clear "start updates from the PC app/console" message.
+
+### Security
+- `.gitignore` now covers local token files and key material (`github_token.txt`, `.env*`, `*.pem`, `*.key`, …).
+
 ## [0.4.2] - 2026-09-26
 
 ### Added

@@ -52,13 +52,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      # cpal needs ALSA headers on Linux only; Windows (WASAPI) and macOS
-      # (CoreAudio) build against system frameworks with no extra packages.
+      # cpal needs ALSA headers on Linux only; Windows (WASAPI) builds against
+      # system frameworks with no extra packages.
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |

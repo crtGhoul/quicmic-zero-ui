@@ -1,15 +1,18 @@
 //! Audio subsystem: the lock-free ring buffer, incoming-packet decoding into the
-//! ring, and the output device / resampler. Input DSP (noise gate and gain) runs
-//! client-side in the AudioWorklet, so the server is a pure passthrough on the
-//! receive hot path — it only decodes bytes and hands them to the output stage.
+//! ring, and the output device / resampler. Basic input DSP (noise gate and
+//! gain) runs client-side in the AudioWorklet; speech-focused noise
+//! cancellation (RNNoise + voice gate, see `denoise`) runs here on the PC in
+//! the receive path, so the virtual mic only ever carries cleaned audio.
 //!
 //! Submodules keep each concern — and its tests — self-contained. The public
 //! surface used by the rest of the crate is re-exported here.
 
+mod denoise;
 mod output;
 mod processor;
 mod ring_buffer;
 
+pub use denoise::SpeechDenoiser;
 pub use output::{list_output_devices, spawn_output_supervisor};
 pub use processor::{decode_into_rings, MAX_SAMPLES_PER_PACKET};
 pub use ring_buffer::RingBuffer;

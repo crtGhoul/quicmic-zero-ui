@@ -219,6 +219,9 @@ mod tests {
             gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             latency_threshold: Arc::new(AtomicU32::new(150)),
             output_volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            denoiser: Arc::new(parking_lot::Mutex::new(
+                crate::audio::SpeechDenoiser::default(),
+            )),
             monitor_ring: None,
             monitor_enabled: Arc::new(AtomicBool::new(false)),
             packets_received: Arc::new(AtomicU64::new(0)),

@@ -2,6 +2,7 @@
 name = "quicmic"
 version = "0.4.2"
 edition = "2021"
+authors = ["crtGhoul"]
 description = "Turn any device with a microphone and a web browser into a wireless PC microphone over WebTransport"
 license = "GPL-3.0-or-later"
 readme = "README.md"
@@ -23,7 +24,15 @@ exclude = [
     ".gitignore",
 ]
 
+[package.metadata.wix]
+upgrade-guid = "99A5D017-94BE-4CD2-9B6D-D92E0B00E7F4"
+path-guid = "1BE1861C-BA69-4079-AF05-E5FB24DD4857"
+license = false
+eula = false
+
 [dependencies]
+# Pure-Rust RNNoise port: speech-focused noise cancellation (Gate 5).
+nnnoiseless = "0.5"
 # Web framework & transport
 axum = { version = "0.8", features = ["ws", "macros"] }
 # `tls-rustls-no-provider` (instead of `tls-rustls`) avoids pulling in the
@@ -124,6 +133,10 @@ open = "5"
 # Pure Rust (miniz_oxide via fdeflate) — no C compiler or system libraries, so
 # Linux/macOS builds gain no system dependencies from it.
 png = "0.18"
+
+[target.'cfg(windows)'.build-dependencies]
+# Embeds assets/quicmic.ico into the .exe on Windows (build.rs, cfg(windows)).
+winresource = "0.1"
 
 [dev-dependencies]
 # `tower`'s `util` feature provides `ServiceExt::oneshot`, used to drive the axum

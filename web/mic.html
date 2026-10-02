@@ -217,6 +217,19 @@
                         swipe up / down anywhere on the main screen to change it.</div>
                 </div>
 
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Noise cancellation (PC)</span>
+                        <div class="setting-control">
+                            <label class="toggle" title="Speech-focused noise cancellation on the PC">
+                                <input type="checkbox" id="nc-toggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-hint">Speech-focused noise cancellation on the PC — passes human voice, suppresses background noise; it does not identify a specific person. Runs on the PC (RNNoise), on top of this phone's basic noise gate.</div>
+                </div>
+
                 <div class="setting-row" id="monitor-row">
                     <div class="setting-label">
                         <span>Monitor (hear yourself)</span>
@@ -237,9 +250,7 @@
                         <span>Update PC app</span>
                     </div>
                     <button id="update-btn" class="btn btn-secondary btn-block">&#128260; Check for update</button>
-                    <div class="setting-hint">Downloads the latest release from your private GitHub and restarts the
-                        PC app into it &mdash; no manual download. Needs a GitHub token on the PC
-                        (see the README); you&apos;ll be asked to reload this page after the restart.</div>
+                    <div class="setting-hint">For safety, updates are started from the PC app/console — this button now asks the PC, and the PC must confirm locally. You&apos;ll be asked to reload this page after the restart.</div>
                 </div>
             </div>
 

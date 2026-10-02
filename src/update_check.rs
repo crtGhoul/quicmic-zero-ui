@@ -22,10 +22,9 @@ use tokio_rustls::TlsConnector;
 /// GitHub `owner/repo` this build checks against: this app's own repo. It used to
 /// point at the upstream public fork, which made the check permanently report a
 /// "newer" version from a *different* project — exactly the false positive this
-/// check promises never to produce. Note the repo is private, so the
-/// unauthenticated request below gets no `Location` redirect and the check stays
-/// silent; real updates for this app go through the token-authenticated `update`
-/// command ([`crate::self_update`]).
+/// check promises never to produce. The repo is public, so the unauthenticated
+/// request below needs no token; real updates go through the `update` command
+/// ([`crate::self_update`]), which uses the same public release.
 ///
 /// The casing must match the canonical repository name exactly: GitHub 301-redirects a wrong-case path to the
 /// canonical one, and `fetch_latest_tag` follows only a single redirect, so a
