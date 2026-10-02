@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-01
 
 ### Added
 - **Speech-focused noise cancellation (PC-side, on by default):** RNNoise (pure-Rust `nnnoiseless`) plus a voice-activity gate now clean the mic audio on the PC before it reaches apps — speech-focused noise cancellation — passes human voice, suppresses background noise; it does not identify a specific person. Frames with no detected speech fade to near-silence with a ~250 ms hangover so word endings aren't clipped; added latency is at most ~20 ms. Toggle/threshold via `/api/settings` (`noise_cancellation`, `nc_vad_threshold`) and the phone's Mic settings drawer. Previously the only noise handling was the phone-side amplitude noise gate in the AudioWorklet — there was no server-side suppression.
