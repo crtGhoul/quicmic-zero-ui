@@ -173,6 +173,9 @@ pub struct AppState {
     /// renamed anything). Reported to the phone so its UI can show what apps
     /// like Discord will list as the mic input.
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
+    /// Where the server identity, GUI prefs, and update markers live. Used by
+    /// `/api/update` so the staged-update marker lands next to the identity.
+    pub data_dir: std::path::PathBuf,
 }
 
 /// Try to atomically claim the single-connection slot, retrying briefly to

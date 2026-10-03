@@ -73,7 +73,9 @@ pub(crate) fn token_from_file(path: &Path) -> Option<String> {
 /// Run the whole update flow, printing progress. Returns `true` when a new
 /// version was staged and the caller should quit so the updater batch can
 /// swap the exe and restart it.
-pub async fn run_update() -> anyhow::Result<bool> {
+pub async fn run_update(
+    #[cfg_attr(not(windows), allow(unused_variables))] data_dir: &std::path::Path,
+) -> anyhow::Result<bool> {
     // Platform gate first: self-update only exists for the Windows exe, so on
     // other platforms bail before any network work instead of downloading an
     // exe we would only discard. (`cfg!` rather than `#[cfg]` so the rest of
@@ -129,6 +131,10 @@ pub async fn run_update() -> anyhow::Result<bool> {
     {
         if is_msi {
             stage_msi_install(&dest)?;
+            // Record the staged update so the next launch can verify it
+            // actually landed. Previously a blocked/denied installer left the
+            // user on the old version with no message at all.
+            write_pending_marker(data_dir, &rel.tag);
             println!(
                 "Update staged — Windows Installer is taking over. If Windows asks for \
                  permission, accept it: the installer cannot replace QuicMic without it. \
@@ -499,6 +505,27 @@ fn stage_self_update(new_exe: &Path) -> anyhow::Result<()> {
 /// The caller quits right after, so no QuicMic file is locked when the
 /// installer runs. Unlike the exe swap there is no automatic relaunch — the
 /// user reopens QuicMic from the Start Menu when the installer finishes.
+#[cfg(windows)]
+/// Record that an MSI update to `tag` was staged, so the next launch can
+/// verify it actually landed (see `check_pending_update` in main.rs).
+/// Best-effort: a failure to write the marker must never fail the update.
+fn write_pending_marker(data_dir: &Path, tag: &str) {
+    let target = match update_check::parse_version(tag) {
+        Some((maj, min, patch)) => format!("{maj}.{min}.{patch}"),
+        None => return,
+    };
+    let body = serde_json::json!({
+        "target": target,
+        "tag": tag,
+        "url": format!("https://github.com/{REPO}/releases/tag/{tag}"),
+    });
+    let path = data_dir.join("update-pending.json");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, serde_json::to_string(&body).unwrap_or_default());
+}
+
 #[cfg(windows)]
 fn stage_msi_install(msi: &Path) -> anyhow::Result<()> {
     use std::os::windows::process::CommandExt;

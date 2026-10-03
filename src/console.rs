@@ -606,7 +606,7 @@ pub async fn handle_command(line: &str, ctx: &Ctx) -> Action {
         "update" => {
             // Self-updater: downloads the latest release's exe and restarts
             // into it, so you don't have to fetch it from GitHub by hand.
-            match self_update::run_update().await {
+            match self_update::run_update(&ctx.data_dir).await {
                 Ok(true) => return Action::Quit, // updater batch takes over
                 Ok(false) => {}
                 Err(e) => println!("Update failed: {e:#}"),

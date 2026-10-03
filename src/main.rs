@@ -481,6 +481,10 @@ async fn run() -> anyhow::Result<()> {
     let data_dir = identity::data_dir(cli.data_dir.as_deref());
     let (wt_identity, identity, pin, identity_fresh) =
         identity::load_or_create(&data_dir, lan_ip, cli.dump_certs, cli.pin.clone())?;
+    // If a previous run staged an MSI update, verify it actually landed and
+    // tell the user either way — a blocked/denied installer used to leave
+    // them on the old version with no message at all.
+    let pending_update_notice = check_pending_update(&data_dir);
     // Shared, mutable PIN: the API validates against it and the `newpin`
     // console command rotates it live.
     let pin_shared = std::sync::Arc::new(parking_lot::Mutex::new(pin));
@@ -723,6 +727,7 @@ async fn run() -> anyhow::Result<()> {
         phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
         mic_rename_mode: mic_rename_mode.clone(),
         applied_mic_name: Arc::new(parking_lot::Mutex::new(applied_mic_name)),
+        data_dir: data_dir.clone(),
     };
 
     // Clone the console-visible state before `app_state` moves into the router.
@@ -758,6 +763,16 @@ async fn run() -> anyhow::Result<()> {
     // tokio workers. When the window closes, the normal graceful shutdown
     // runs below.
     if use_gui {
+        #[cfg(windows)]
+        if launched_by_double_click() {
+            // The console was created just for this process and the GUI is the
+            // real UI — hide it so the app feels like a real Windows app.
+            // Launched from a terminal, the user's own console is left alone.
+            // (Tray mode already hid it above; hiding twice is harmless.)
+            // Done here, after all fallible startup, so a startup error still
+            // prints to a visible console.
+            tray::hide_own_console();
+        }
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let gctx = gui::GuiCtx {
             stream: stream_state.clone(),
@@ -773,7 +788,7 @@ async fn run() -> anyhow::Result<()> {
             mic_rename_mode: mic_rename_mode.clone(),
             applied_mic_name: applied_mic_name.clone(),
             update_status: update_status.clone(),
-            update_notice: Arc::new(parking_lot::Mutex::new(None)),
+            update_notice: Arc::new(parking_lot::Mutex::new(pending_update_notice.clone())),
             port: cli.port,
             lan_ip: lan_ip.to_string(),
             update_check_ran,
@@ -799,6 +814,9 @@ async fn run() -> anyhow::Result<()> {
     // ── Console command loop ────────────────────────────────────────────
     // A blocking stdin reader forwards typed lines to the main task. With
     // stdin closed or piped the iterator ends immediately and the thread exits.
+    if let Some(msg) = &pending_update_notice {
+        println!("{msg}");
+    }
     let ctx = console::Ctx {
         theme: theme_lock.clone(),
         url: url.clone(),
@@ -1144,6 +1162,35 @@ fn set_terminal_title(title: &str) {
     }
 }
 
+/// If the previous run staged an MSI update (see
+/// `self_update::write_pending_marker`), verify it actually landed.
+/// The marker is always consumed. Returns a user-facing notice when there is
+/// something worth saying: success when the new version is running, or a
+/// pointer to the manual download when the install never completed (e.g. the
+/// Windows permission prompt was missed or denied).
+fn check_pending_update(data_dir: &std::path::Path) -> Option<String> {
+    let path = data_dir.join("update-pending.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let target = v.get("target")?.as_str()?;
+    let tag = v.get("tag").and_then(|t| t.as_str()).unwrap_or(target);
+    let url = v.get("url").and_then(|u| u.as_str()).unwrap_or("");
+    let target_v = update_check::parse_version(target)?;
+    let current_v = update_check::parse_version(env!("CARGO_PKG_VERSION"))?;
+    if current_v == target_v {
+        Some(format!("QuicMic updated to {target}."))
+    } else if current_v > target_v {
+        // A newer manual install superseded the staged update — nothing to say.
+        None
+    } else {
+        Some(format!(
+            "The update to {tag} didn't finish — Windows probably blocked the installer \
+             (the permission prompt may have been missed). Install it manually: {url}"
+        ))
+    }
+}
+
 /// Best-effort detection of whether the app was launched by double-clicking
 /// (rather than from an existing terminal). Used to keep the window open on a
 /// startup error so the user can read it.
@@ -1179,8 +1226,8 @@ fn pause_before_exit() {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_unusable_lan_addr, is_virtual_adapter, lan_addr_rank, noise_gate_db_to_linear,
-        parse_ip_arg, pick_lan_ip, trust_default_pick, url_host,
+        check_pending_update, is_unusable_lan_addr, is_virtual_adapter, lan_addr_rank,
+        noise_gate_db_to_linear, parse_ip_arg, pick_lan_ip, trust_default_pick, url_host,
     };
     use std::net::IpAddr;
 
@@ -1392,5 +1439,69 @@ mod tests {
         assert!((noise_gate_db_to_linear(-6.0) - 0.5011872).abs() < 1e-4);
         // -20 dB is exactly 0.1.
         assert!((noise_gate_db_to_linear(-20.0) - 0.1).abs() < 1e-5);
+    }
+
+    fn write_marker(dir: &std::path::Path, target: &str) {
+        let body = serde_json::json!({
+            "target": target,
+            "tag": format!("v{target}"),
+            "url": format!("https://github.com/crtGhoul/quicmic-zero-ui/releases/tag/v{target}"),
+        });
+        std::fs::write(
+            dir.join("update-pending.json"),
+            serde_json::to_string(&body).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn pending_update_absent_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(check_pending_update(dir.path()), None);
+    }
+
+    #[test]
+    fn pending_update_landed_reports_success() {
+        // The marker targets the version under test (CARGO_PKG_VERSION).
+        let dir = tempfile::tempdir().unwrap();
+        let current = env!("CARGO_PKG_VERSION");
+        write_marker(dir.path(), current);
+        let notice = check_pending_update(dir.path()).expect("success notice");
+        assert!(notice.contains("updated"), "unexpected notice: {notice}");
+        // The marker is consumed either way.
+        assert!(!dir.path().join("update-pending.json").exists());
+    }
+
+    #[test]
+    fn pending_update_missed_reports_failure_with_link() {
+        let dir = tempfile::tempdir().unwrap();
+        write_marker(dir.path(), "99.0.0");
+        let notice = check_pending_update(dir.path()).expect("failure notice");
+        assert!(
+            notice.contains("didn't finish"),
+            "unexpected notice: {notice}"
+        );
+        assert!(
+            notice.contains("releases/tag/v99.0.0"),
+            "missing manual link: {notice}"
+        );
+        assert!(!dir.path().join("update-pending.json").exists());
+    }
+
+    #[test]
+    fn pending_update_superseded_is_silent() {
+        // A newer manual install already superseded the staged update.
+        let dir = tempfile::tempdir().unwrap();
+        write_marker(dir.path(), "0.1.0");
+        assert_eq!(check_pending_update(dir.path()), None);
+        assert!(!dir.path().join("update-pending.json").exists());
+    }
+
+    #[test]
+    fn pending_update_corrupt_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("update-pending.json"), "not json{{{").unwrap();
+        assert_eq!(check_pending_update(dir.path()), None);
+        assert!(!dir.path().join("update-pending.json").exists());
     }
 }

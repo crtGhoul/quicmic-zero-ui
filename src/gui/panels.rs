@@ -552,8 +552,9 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             let shutdown = app.g.shutdown_requested.clone();
             let egui_ctx = app.g.egui_ctx.clone();
             let notice = app.g.update_notice.clone();
+            let data_dir = app.g.data_dir.clone();
             tokio::spawn(async move {
-                match crate::self_update::run_update().await {
+                match crate::self_update::run_update(&data_dir).await {
                     Ok(true) => {
                         // The updater staged a new exe; shut down so its
                         // restart script can swap it in.

@@ -585,7 +585,7 @@ pub(super) async fn handle_update(
             .into_response();
     }
 
-    match crate::self_update::run_update().await {
+    match crate::self_update::run_update(&state.data_dir).await {
         Ok(true) => {
             // Never blocks: the channel is buffered and the main loop always
             // drains it before exiting.
