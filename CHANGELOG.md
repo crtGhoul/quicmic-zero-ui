@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **In-app 101 guide:** new Guide tab in the PC app (pairing, Windows Firewall incl. missed-prompt recovery, picking the mic in Discord, troubleshooting) plus a matching Guide page on the phone (landing-page card → `guide.html`, cached offline by the service worker).
+- **Audio format fallback:** if the mic output device refuses its own default config (e.g. VB-Cable held in exclusive mode), the app now walks every supported config — preferring the rate closest to 48 kHz — before giving up, instead of dying on the first refusal.
+- **Actionable audio errors:** a missing virtual-mic device now names the remedy (install VB-Audio Virtual Cable from vb-audio.com/Cable, enable CABLE Input/Output) instead of dumping a bare device list; a total stream-open failure explains the exclusive-mode fix.
+- Mic-rename failures are now surfaced in the GUI Settings tab (previously only a log line), so a failed auto-rename — usually "needs one run as administrator" — is visible where the user looks.
+
+### Changed
+- Prebuffer cushion 30 ms → 20 ms: ~10 ms less standing latency (typical glass-to-virtual-mic now ~50–85 ms, comfortably under the 150 ms target for real-time callouts). Worst-case drift is still clamped by the latency-recovery hard skip.
+- Settings "Mic input name" section: one name field instead of two ("Fixed name" + "Rename now"), with a one-line explanation under each Auto/Off/Fixed mode.
+- The top bar and Status tab now show the phone's name (or "phone") when connected — never a raw IP address (the IP stays in Diagnostics where it belongs).
+- Diagnostics masks the pairing PIN when the Pair tab's "Show PIN" toggle is off.
+
+### Fixed
+- (tests) New unit tests: audio-config rate preference, missing-device help text names the remedy, and an impulse-injection probe bounding the server-side pipeline delay (prebuffer + resampler).
+
 ## [0.6.2] - 2026-10-01
 
 ### Added

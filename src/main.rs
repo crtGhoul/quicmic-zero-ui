@@ -700,6 +700,11 @@ async fn run() -> anyhow::Result<()> {
     let mic_rename_mode = Arc::new(parking_lot::Mutex::new(mic_name::parse_rename_mic(
         cli.rename_mic.as_deref(),
     )));
+    // Carries rename failures to the GUI (see the pair handler in api.rs):
+    // without this, a failed rename is only a log line and the user never
+    // learns why Discord still shows the old name.
+    let mic_rename_error: Arc<parking_lot::Mutex<Option<String>>> =
+        Arc::new(parking_lot::Mutex::new(None));
     let applied_mic_name = match &*mic_rename_mode.lock() {
         mic_name::MicRenameMode::Fixed(name) => match mic_name::rename_mic(Some(name)) {
             Ok(applied) => {
@@ -708,6 +713,7 @@ async fn run() -> anyhow::Result<()> {
             }
             Err(e) => {
                 warn!("--rename-mic failed: {e:#}");
+                *mic_rename_error.lock() = Some(format!("{e:#}"));
                 None
             }
         },
@@ -727,6 +733,7 @@ async fn run() -> anyhow::Result<()> {
         phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
         mic_rename_mode: mic_rename_mode.clone(),
         applied_mic_name: Arc::new(parking_lot::Mutex::new(applied_mic_name)),
+        mic_rename_error: mic_rename_error.clone(),
         data_dir: data_dir.clone(),
     };
 
@@ -734,6 +741,7 @@ async fn run() -> anyhow::Result<()> {
     let phone_device_name = app_state.phone_device_name.clone();
     let mic_rename_mode = app_state.mic_rename_mode.clone();
     let applied_mic_name = app_state.applied_mic_name.clone();
+    let mic_rename_error = app_state.mic_rename_error.clone();
 
     let router = server::build_router(app_state);
     let tls_config = tls::build_rustls_config_async(&identity).await?;
@@ -787,6 +795,7 @@ async fn run() -> anyhow::Result<()> {
             phone_device_name: phone_device_name.clone(),
             mic_rename_mode: mic_rename_mode.clone(),
             applied_mic_name: applied_mic_name.clone(),
+            mic_rename_error: mic_rename_error.clone(),
             update_status: update_status.clone(),
             update_notice: Arc::new(parking_lot::Mutex::new(pending_update_notice.clone())),
             port: cli.port,

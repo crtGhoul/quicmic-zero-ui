@@ -255,6 +255,7 @@ mod tests {
             phone_device_name: Arc::new(parking_lot::Mutex::new(None)),
             mic_rename_mode: Arc::new(parking_lot::Mutex::new(crate::mic_name::MicRenameMode::Off)),
             applied_mic_name: Arc::new(parking_lot::Mutex::new(None)),
+            mic_rename_error: Arc::new(parking_lot::Mutex::new(None)),
             data_dir: std::path::PathBuf::from("/tmp/quicmic-test"),
         }
     }

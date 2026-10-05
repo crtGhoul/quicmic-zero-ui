@@ -18,7 +18,13 @@ use super::ring_buffer::RingBuffer;
 /// sample rate, so the cushion stays ~constant in time across 44.1k–192k sources
 /// (a fixed sample count would otherwise mean ~30ms at 48k but only ~7.5ms at
 /// 192k).
-const PREBUFFER_MS: u32 = 30;
+///
+/// 20ms is the deliberate trade-off point: 10ms would shave another ~10ms of
+/// standing latency but underruns on jittery Wi-Fi (each one is an audible
+/// gap while the buffer refills); 30ms was the old value. The hard skip still
+/// clamps worst-case drift to the latency threshold, so this only affects the
+/// steady-state cushion.
+const PREBUFFER_MS: u32 = 20;
 
 /// Source samples pulled from the ring per batch. Reading in batches amortizes
 /// the ring's per-sample atomic synchronization (a real win on weak-memory-model
@@ -74,11 +80,18 @@ pub fn find_device(requested: Option<&str>) -> anyhow::Result<Device> {
                 .unwrap_or(false)
         })
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Audio device '{}' not found. Available devices:\n{}",
+            let mut msg = format!(
+                "Audio device '{}' not found. Available devices:\n  - {}",
                 target,
                 list_output_devices().join("\n  - ")
-            )
+            );
+            // When the *default* virtual-mic device is the thing that's missing,
+            // the user almost certainly hasn't installed it yet — name the
+            // remedy instead of leaving them to decode a device list.
+            if target.eq_ignore_ascii_case(DEFAULT_DEVICE) {
+                msg.push_str(&missing_virtual_device_help());
+            }
+            anyhow::anyhow!(msg)
         })?;
 
     let device_name = device
@@ -87,6 +100,37 @@ pub fn find_device(requested: Option<&str>) -> anyhow::Result<Device> {
         .unwrap_or_else(|_| "Unknown".to_string());
     info!(device = %device_name, "Selected audio output device");
     Ok(device)
+}
+
+/// Remedy text for when the platform's default virtual-mic device isn't
+/// present. QuicMic plays the phone's mic audio *into* this device so apps
+/// like Discord can select its other end as a microphone input.
+#[cfg(target_os = "windows")]
+fn missing_virtual_device_help() -> String {
+    "\n\nVB-Audio Virtual Cable doesn't appear to be installed or enabled.\n\
+     QuicMic plays your phone's mic audio into \"CABLE Input\" so Discord and other apps\n\
+     can pick \"CABLE Output\" as a microphone.\n\
+     Install it free from https://vb-audio.com/Cable/ (donationware), reboot if the installer asks,\n\
+     then start QuicMic again.\n\
+     If it IS installed: open Windows Sound settings and make sure both\n\
+     \"CABLE Input\" and \"CABLE Output\" are enabled and not exclusively held by another app."
+        .to_string()
+}
+
+#[cfg(target_os = "macos")]
+fn missing_virtual_device_help() -> String {
+    "\n\nBlackHole doesn't appear to be installed.\n\
+     QuicMic plays your phone's mic audio into it so other apps can use it as a microphone.\n\
+     Install it free from https://existential.audio/blackhole/, then start QuicMic again."
+        .to_string()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn missing_virtual_device_help() -> String {
+    "\n\nThe virtual microphone device doesn't appear to exist.\n\
+     QuicMic plays your phone's mic audio into it so other apps can use it as a microphone.\n\
+     Create one (e.g. a PulseAudio null sink) and point QuicMic at it with --device <name>."
+        .to_string()
 }
 
 /// Find a physical output device for the hear-yourself monitor stream.
@@ -312,25 +356,35 @@ fn open_output_stream(
         Some(_) => find_monitor_device(device_name)?,
         None => find_device(device_name)?,
     };
-    let default_config = device.default_output_config()?;
-    let sample_format = default_config.sample_format();
-    let config: StreamConfig = default_config.into();
+    let friendly_name = device
+        .description()
+        .map(|desc| desc.name().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
 
-    info!(
-        sample_rate = config.sample_rate,
-        channels = config.channels,
-        format = ?sample_format,
-        "Starting audio output stream (system default)"
-    );
-
-    // Guard against a (pathological) zero-channel device: chunks_mut(0) panics.
-    let channels = (config.channels as usize).max(1);
-    let target_rate = config.sample_rate as f64;
+    // Candidate stream configs: the OS default first (preserves the existing
+    // behaviour whenever it works), then every other supported config as a
+    // fallback. Some installs — notably VB-Cable held in exclusive mode or
+    // with a corrupted mix format — refuse even the default config; walking
+    // the supported list instead of dying outright is what keeps the app alive
+    // in that case.
+    let candidates = candidate_output_configs(&device, &friendly_name);
+    if candidates.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No usable audio output configs on '{}': the device reported no default\n\
+             config and no supported configs. Reinstall the device's driver and try again.",
+            friendly_name
+        ));
+    }
 
     // Macro to eliminate code duplication across sample format branches.
-    // Each branch is identical except for the concrete sample type.
+    // Each branch is identical except for the concrete sample type. The
+    // config is a parameter because the fallback loop tries several.
     macro_rules! build_stream {
-        ($T:ty) => {{
+        ($T:ty, $config:expr) => {{
+            let config: StreamConfig = $config;
+            // Guard against a (pathological) zero-channel device: chunks_mut(0) panics.
+            let channels = (config.channels as usize).max(1);
+            let target_rate = config.sample_rate as f64;
             let ring = ring.clone();
             let source_rate = source_sample_rate.clone();
             let threshold = latency_threshold.clone();
@@ -423,20 +477,142 @@ fn open_output_stream(
         }};
     }
 
-    let stream = match sample_format {
-        SampleFormat::F32 => build_stream!(f32),
-        SampleFormat::I16 => build_stream!(i16),
-        SampleFormat::U16 => build_stream!(u16),
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Unsupported sample format: {:?}",
-                sample_format
-            ))
+    // Try each candidate config in order; the first one that opens wins. A
+    // device that refuses its own default config (exclusive-mode conflict,
+    // corrupted mix format) still gets every other supported config tried
+    // before we give up.
+    let mut last_err: Option<anyhow::Error> = None;
+    for (sample_format, config) in &candidates {
+        let attempt: anyhow::Result<Stream> = (|| {
+            let stream = match sample_format {
+                SampleFormat::F32 => build_stream!(f32, *config),
+                SampleFormat::I16 => build_stream!(i16, *config),
+                SampleFormat::U16 => build_stream!(u16, *config),
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Unsupported sample format: {:?}",
+                        sample_format
+                    ))
+                }
+            };
+            stream.play()?;
+            Ok(stream)
+        })();
+        match attempt {
+            Ok(stream) => {
+                info!(
+                    sample_rate = config.sample_rate,
+                    channels = config.channels,
+                    format = ?sample_format,
+                    device = %friendly_name,
+                    "Audio output stream opened"
+                );
+                return Ok(stream);
+            }
+            Err(e) => {
+                warn!(
+                    "Audio output config {} Hz / {} ch / {:?} on '{}' failed: {:#}; trying next",
+                    config.sample_rate, config.channels, sample_format, friendly_name, e
+                );
+                last_err = Some(e);
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Could not open an audio stream on '{}' (tried {} format{}). Last error: {:#}\n\
+         If this is VB-Cable: open Windows Sound settings → \"CABLE Input\" → Properties →\n\
+         Advanced, and uncheck \"Allow applications to take exclusive control of this device\".\n\
+         If that doesn't help, reinstall VB-Audio Virtual Cable from https://vb-audio.com/Cable/.",
+        friendly_name,
+        candidates.len(),
+        if candidates.len() == 1 { "" } else { "s" },
+        last_err
+            .as_ref()
+            .map(|e| format!("{e:#}"))
+            .unwrap_or_else(|| "no configs enumerated".to_string()),
+    ))
+}
+
+/// Preferred sample rate within a supported range: the rate closest to 48 kHz
+/// (the phone's native capture rate, where the resample ratio is 1.0 and no
+/// resampling happens at all).
+fn preferred_rate(min_rate: u32, max_rate: u32) -> u32 {
+    48_000u32.clamp(min_rate, max_rate)
+}
+
+/// Enumerate candidate output stream configs for a device: the OS default
+/// first, then every other supported config (deduped). The Catmull-Rom
+/// resampler adapts to any rate, so the preference is simply "closest to
+/// 48 kHz" — the phone's native capture rate, where the resample ratio is 1.0
+/// and no resampling happens at all.
+fn candidate_output_configs(
+    device: &Device,
+    friendly_name: &str,
+) -> Vec<(SampleFormat, StreamConfig)> {
+    fn format_key(f: SampleFormat) -> u8 {
+        match f {
+            SampleFormat::F32 => 0,
+            SampleFormat::I16 => 1,
+            SampleFormat::U16 => 2,
+            // SampleFormat is non-exhaustive; anything else sorts last.
+            _ => 3,
+        }
+    }
+
+    let mut candidates: Vec<(SampleFormat, StreamConfig)> = Vec::new();
+    let mut seen: Vec<(u32, u16, u8)> = Vec::new();
+    let mut push = |format: SampleFormat, config: StreamConfig| {
+        let key = (config.sample_rate, config.channels, format_key(format));
+        if !seen.contains(&key) {
+            seen.push(key);
+            candidates.push((format, config));
         }
     };
 
-    stream.play()?;
-    Ok(stream)
+    match device.default_output_config() {
+        Ok(cfg) => {
+            let format = cfg.sample_format();
+            let config: StreamConfig = cfg.into();
+            info!(
+                sample_rate = config.sample_rate,
+                channels = config.channels,
+                format = ?format,
+                "Default audio output config"
+            );
+            push(format, config);
+        }
+        Err(e) => warn!(
+            "Could not query the default output config for '{}': {:#}; will try every supported config",
+            friendly_name, e
+        ),
+    }
+
+    match device.supported_output_configs() {
+        Ok(supported) => {
+            for range in supported {
+                let format = range.sample_format();
+                // The stream builder only handles these three; anything else
+                // would fail at build time, so don't offer it as a candidate.
+                if !matches!(
+                    format,
+                    SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16
+                ) {
+                    continue;
+                }
+                let min = range.min_sample_rate();
+                let max = range.max_sample_rate();
+                let config: StreamConfig = range.with_sample_rate(preferred_rate(min, max)).into();
+                push(format, config);
+            }
+        }
+        Err(e) => warn!(
+            "Could not enumerate supported output configs for '{}': {:#}",
+            friendly_name, e
+        ),
+    }
+
+    candidates
 }
 
 /// Spawn the audio output supervisor.
@@ -567,8 +743,94 @@ pub fn spawn_output_supervisor(
 
 #[cfg(test)]
 mod tests {
-    use super::{write_data, ResamplerState};
+    use super::{
+        missing_virtual_device_help, preferred_rate, write_data, ResamplerState, PREBUFFER_MS,
+    };
     use crate::audio::RingBuffer;
+
+    #[test]
+    fn preferred_rate_picks_closest_to_48k() {
+        assert_eq!(preferred_rate(44_100, 44_100), 44_100); // fixed-rate device
+        assert_eq!(preferred_rate(8_000, 192_000), 48_000); // 48k in range
+        assert_eq!(preferred_rate(96_000, 192_000), 96_000); // range above 48k
+        assert_eq!(preferred_rate(8_000, 32_000), 32_000); // range below 48k
+    }
+
+    #[test]
+    fn pipeline_delay_from_ring_to_output_is_bounded() {
+        // Server-side latency probe: inject a single impulse into the ring and
+        // count output samples until it appears. This measures the prebuffer +
+        // resampler portion of glass-to-glass latency (capture packetization,
+        // network, and the OS device buffer are outside this harness).
+        let ring = RingBuffer::new(65536);
+        let mut state = ResamplerState::new();
+        let prebuffer = (PREBUFFER_MS as usize * 48000) / 1000;
+
+        // Silence up to the prebuffer mark, then one full-scale impulse,
+        // then trailing silence so it can flush through the resampler window.
+        ring.push(&vec![0i16; prebuffer]);
+        ring.push(&[i16::MAX]);
+        ring.push(&[0i16; 480]);
+
+        let mut out = [0i16; 240];
+        let mut total_out = 0usize;
+        let mut found_at: Option<usize> = None;
+        for _ in 0..200 {
+            write_data(&mut out, &ring, 1, 1.0, prebuffer, 1.0, &mut state);
+            for (i, s) in out.iter().enumerate() {
+                // At ratio 1.0 the impulse lands on s1 verbatim; neighbouring
+                // frames may also ring from the cubic kernel, so the first
+                // large spike is the arrival marker.
+                if *s > i16::MAX / 2 {
+                    found_at = Some(total_out + i);
+                    break;
+                }
+            }
+            if found_at.is_some() {
+                break;
+            }
+            total_out += out.len();
+        }
+        let found_at = found_at.expect("impulse must appear in the output");
+        let delay_ms = found_at as f64 * 1000.0 / 48000.0;
+        // Must not play before the prebuffer fills (the cushion must be real),
+        // and must appear within prebuffer + one packet + resampler slack.
+        assert!(
+            found_at >= prebuffer,
+            "played before prebuffered: {found_at} < {prebuffer}"
+        );
+        assert!(
+            found_at <= prebuffer + 480 + 128,
+            "pipeline delay too large: {found_at} samples ({delay_ms:.1} ms)"
+        );
+        println!(
+            "measured server-side pipeline delay: {found_at} samples ({delay_ms:.1} ms) at 48 kHz"
+        );
+    }
+
+    #[test]
+    fn missing_device_help_names_the_remedy() {
+        let help = missing_virtual_device_help();
+        assert!(!help.is_empty(), "help text must not be empty");
+        // Every platform's text must tell the user how to fix it, not just
+        // restate that the device is missing.
+        #[cfg(target_os = "windows")]
+        {
+            assert!(help.contains("VB-Audio"), "must name VB-Cable: {help}");
+            assert!(
+                help.contains("vb-audio.com"),
+                "must link the download: {help}"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert!(help.contains("BlackHole"), "must name BlackHole: {help}");
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            assert!(help.contains("--device"), "must point at --device: {help}");
+        }
+    }
 
     #[test]
     fn resampler_stays_silent_while_prebuffering() {

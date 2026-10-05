@@ -235,8 +235,17 @@ pub(super) async fn handle_pair(
                 Ok(applied) => {
                     info!(applied = %applied, "Mic endpoint auto-renamed to phone name");
                     *state.applied_mic_name.lock() = Some(applied);
+                    // A previous failure is now stale — clear it so the GUI
+                    // stops showing it.
+                    *state.mic_rename_error.lock() = None;
                 }
-                Err(e) => warn!("Auto mic rename failed: {e:#}"),
+                Err(e) => {
+                    warn!("Auto mic rename failed: {e:#}");
+                    // Surface it in the GUI Settings tab; a bare warn! is
+                    // invisible there and the user never learns why Discord
+                    // still shows the old name (usually: needs one admin run).
+                    *state.mic_rename_error.lock() = Some(format!("{e:#}"));
+                }
             }
         }
     }

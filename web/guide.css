@@ -1,0 +1,48 @@
+/* QuicMic guide page: same Zero-UI dark theme as the landing page. */
+
+.guide { align-items: stretch; }
+
+.g-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 14px;
+    text-align: left;
+}
+
+.g-card h2 {
+    font-size: 16px;
+    margin-bottom: 10px;
+    color: var(--cyan);
+}
+
+.g-card p {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--txt);
+    margin-bottom: 10px;
+}
+
+.g-card p:last-child { margin-bottom: 0; }
+
+.g-card a { color: var(--cyan); }
+
+.g-tag {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 8px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.g-back {
+    display: inline-block;
+    margin: 6px 0 18px;
+    color: var(--cyan);
+    font-size: 15px;
+    text-decoration: none;
+}
