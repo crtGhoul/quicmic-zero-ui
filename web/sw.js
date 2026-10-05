@@ -4,15 +4,17 @@
    pairing flow and both audio sockets always go to the network — caching
    any of those would break liveness detection and streaming. */
 
-var CACHE = 'quicmic-shell-v2';
+var CACHE = 'quicmic-shell-v3';
 var SHELL = [
   '/',
   '/mic.html',
   '/drop.html',
   '/speaker.html',
+  '/guide.html',
   '/style.css',
   '/drop.css',
   '/landing.css',
+  '/guide.css',
   '/app.js',
   '/drop.js',
   '/zip.js',

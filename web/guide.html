@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0a0a0f">
+    <title>Guide — QuicMic</title>
+    <link rel="icon" type="image/png" href="icons/icon-192.png">
+    <link rel="stylesheet" href="landing.css">
+    <link rel="stylesheet" href="guide.css">
+</head>
+<body>
+    <main class="land guide">
+        <header class="land-head">
+            <h1 class="land-title">GUIDE</h1>
+            <p class="land-sub">Get talking in minutes.</p>
+        </header>
+
+        <section class="g-card">
+            <h2>1. Install the virtual mic <span class="g-tag">PC side</span></h2>
+            <p>QuicMic plays your phone's audio into a virtual microphone on the PC, and Discord listens on its other end. On Windows that is <strong>VB-Audio Virtual Cable</strong> ("CABLE Input" → "CABLE Output"). It is free.</p>
+            <p><a href="https://vb-audio.com/Cable/" rel="noopener">vb-audio.com/Cable</a> — reboot if the installer asks, then restart QuicMic.</p>
+        </section>
+
+        <section class="g-card">
+            <h2>2. Pair this phone</h2>
+            <p>On the PC, open the <strong>Pair</strong> tab and scan the QR code with your phone's camera. Accept the certificate warning — it is your own PC, so the warning is expected. Then tap the mic button to start talking.</p>
+        </section>
+
+        <section class="g-card">
+            <h2>3. Pick the mic in Discord</h2>
+            <p>Discord → Settings → Voice &amp; Video → <strong>Input Device</strong> → your phone's name. If you renamed the mic and Discord still shows the old name, restart Discord — it caches device names.</p>
+        </section>
+
+        <section class="g-card">
+            <h2>Windows Firewall</h2>
+            <p>The first time QuicMic runs, Windows asks to allow it: tick <strong>Private</strong> networks. Your phone must be on the same Wi-Fi as the PC.</p>
+            <p>Clicked Block by accident, or never saw the prompt? Windows Settings → Privacy &amp; security → Windows Security → Firewall → "Allow an app through firewall" → find QuicMic → check Private. Then restart QuicMic.</p>
+        </section>
+
+        <section class="g-card">
+            <h2>Troubleshooting</h2>
+            <p><strong>Paired but Discord hears nothing.</strong> 1) PC Status tab: Connected, packet counts rising? 2) Devices tab: mic output "CABLE Input"? 3) Discord input = your phone's name (not Default)? 4) Just renamed? Restart Discord.</p>
+            <p><strong>Choppy or robotic audio.</strong> Wi-Fi congestion — move closer to the router or use 5&nbsp;GHz. The PC Diagnostics tab shows packet-loss %.</p>
+            <p><strong>Certificate warning keeps coming back.</strong> Normal: the certificate renews every 14 days and when your network changes. Accept it again.</p>
+            <p><strong>"Another client is already connected."</strong> One phone at a time — close the mic page on the other device.</p>
+        </section>
+
+        <p><a class="g-back" href="index.html">← Back</a></p>
+        <footer class="land-foot">Runs 100% on your Wi-Fi. Nothing leaves your network.</footer>
+    </main>
+</body>
+</html>

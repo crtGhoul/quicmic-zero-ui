@@ -53,6 +53,8 @@ pub struct GuiCtx {
     /// pair handler reads it on every pairing.
     pub mic_rename_mode: Arc<parking_lot::Mutex<MicRenameMode>>,
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
+    /// Last mic-rename failure for display in Settings (see AppState).
+    pub mic_rename_error: Arc<parking_lot::Mutex<Option<String>>>,
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
     /// Carries the self-updater's result back to the UI thread: the install
     /// button's background task writes either an error or an informational
@@ -107,6 +109,9 @@ pub struct Snapshot {
     pub monitor_enabled: bool,
     pub pin: String,
     pub applied_mic_name: Option<String>,
+    /// Last mic-rename failure, if any — shown in Settings so the user knows
+    /// why Discord still lists the old name.
+    pub mic_rename_error: Option<String>,
     pub update_available: Option<String>,
 }
 
@@ -133,6 +138,7 @@ pub struct PollInputs {
     pub speaker_device: Arc<parking_lot::Mutex<Option<String>>>,
     pub phone_device_name: Arc<parking_lot::Mutex<Option<String>>>,
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
+    pub mic_rename_error: Arc<parking_lot::Mutex<Option<String>>>,
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
 }
 
@@ -147,6 +153,7 @@ impl GuiCtx {
             speaker_device: self.speaker_device.clone(),
             phone_device_name: self.phone_device_name.clone(),
             applied_mic_name: self.applied_mic_name.clone(),
+            mic_rename_error: self.mic_rename_error.clone(),
             update_status: self.update_status.clone(),
         }
     }
@@ -350,6 +357,7 @@ fn poll_snapshot(p: &PollInputs, devices_refresh: &AtomicBool, ticks: u64) -> Sn
         monitor_enabled: s.monitor_enabled.load(Ordering::Relaxed),
         pin: p.pin.lock().clone(),
         applied_mic_name: p.applied_mic_name.lock().clone(),
+        mic_rename_error: p.mic_rename_error.lock().clone(),
         update_available: p.update_status.lock().clone(),
     }
 }

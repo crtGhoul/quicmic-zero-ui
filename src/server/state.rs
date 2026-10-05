@@ -173,6 +173,11 @@ pub struct AppState {
     /// renamed anything). Reported to the phone so its UI can show what apps
     /// like Discord will list as the mic input.
     pub applied_mic_name: Arc<parking_lot::Mutex<Option<String>>>,
+    /// The last mic-rename failure, if any (`None` when the last rename
+    /// succeeded or none was attempted). Surfaced in the GUI so a failed
+    /// auto-rename (usually: not running as administrator) is visible
+    /// instead of only being a `warn!` log line.
+    pub mic_rename_error: Arc<parking_lot::Mutex<Option<String>>>,
     /// Where the server identity, GUI prefs, and update markers live. Used by
     /// `/api/update` so the staged-update marker lands next to the identity.
     pub data_dir: std::path::PathBuf,

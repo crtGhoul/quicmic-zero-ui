@@ -75,10 +75,11 @@ pub(super) fn status(_app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             ui.horizontal(|ui| {
                 ui.label(status_dot(snap.connected));
                 if snap.connected {
+                    // Identity slot: the phone's name, never its IP address
+                    // (the IP is shown in Diagnostics where it belongs).
                     let who = snap
                         .phone_name
                         .clone()
-                        .or(snap.mic_peer.clone())
                         .unwrap_or_else(|| "phone".to_string());
                     ui.label(RichText::new(who).strong());
                 } else {
@@ -445,10 +446,10 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
 
     section(ui, "Mic input name (what Discord lists)");
     // Runtime rename-mode selector. Auto renames the endpoint to the paired
-    // phone's name on every pairing; Fixed uses the name below; Off never
-    // renames automatically. Takes effect immediately (the pair handler reads
-    // the shared mode); the startup `--rename-mic` flag only sets the
-    // initial value.
+    // phone's name on every pairing; Fixed always uses the name in the field
+    // below; Off never renames automatically. Takes effect immediately (the
+    // pair handler reads the shared mode); the startup `--rename-mic` flag
+    // only sets the initial value.
     {
         use crate::mic_name::MicRenameMode;
         let mut sel: u8 = match *app.g.mic_rename_mode.lock() {
@@ -462,19 +463,27 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             ui.radio_value(&mut sel, 1, "Off");
             ui.radio_value(&mut sel, 2, "Fixed");
         });
-        if sel == 2 {
-            ui.horizontal(|ui| {
-                ui.label("Fixed name:");
-                ui.text_edit_singleline(&mut app.rename_fixed_name);
-            });
-        }
-        let fixed = app.rename_fixed_name.trim().to_string();
-        // An empty fixed name would be meaningless — keep the previous mode
-        // until the user types one.
+        ui.label(
+            RichText::new(match sel {
+                0 => "Auto: the mic is renamed to your phone's name every time it pairs.",
+                1 => "Off: the mic keeps whatever name it already has.",
+                _ => "Fixed: the mic always uses the name below.",
+            })
+            .weak()
+            .small(),
+        );
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            ui.text_edit_singleline(&mut app.rename_name)
+                .on_hover_text("Used by Fixed mode, and by Apply now.");
+        });
+        let wanted = app.rename_name.trim().to_string();
+        // An empty name would be meaningless — keep the previous mode until
+        // the user types one.
         let new_mode = match sel {
             0 => Some(MicRenameMode::Auto),
             1 => Some(MicRenameMode::Off),
-            _ if !fixed.is_empty() => Some(MicRenameMode::Fixed(fixed)),
+            _ if !wanted.is_empty() => Some(MicRenameMode::Fixed(wanted)),
             _ => None,
         };
         if let Some(new_mode) = new_mode {
@@ -485,30 +494,52 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
                 app.notify("Mic rename mode updated.");
             }
         }
-        if sel == 2 && app.rename_fixed_name.trim().is_empty() {
+        if sel == 2 && app.rename_name.trim().is_empty() {
             ui.label(
-                RichText::new("Type a fixed name to switch to Fixed mode.")
+                RichText::new("Type a name above to switch to Fixed mode.")
                     .weak()
                     .small(),
             );
         }
-    }
-    ui.horizontal(|ui| {
-        ui.label("Rename now to:");
-        ui.text_edit_singleline(&mut app.rename_name);
-        if ui.button("Apply").clicked() {
-            let wanted = app.rename_name.trim();
-            match crate::mic_name::rename_mic(Some(wanted)) {
-                Ok(name) => {
-                    *app.g.applied_mic_name.lock() = Some(name.clone());
-                    app.notify(format!("Mic input renamed to \"{name}\"."));
+        ui.horizontal(|ui| {
+            if ui.button("Apply now").clicked() {
+                let wanted = app.rename_name.trim();
+                if wanted.is_empty() {
+                    app.notify("Type a name first.");
+                } else {
+                    match crate::mic_name::rename_mic(Some(wanted)) {
+                        Ok(name) => {
+                            *app.g.applied_mic_name.lock() = Some(name.clone());
+                            *app.g.mic_rename_error.lock() = None;
+                            app.notify(format!("Mic input renamed to \"{name}\"."));
+                        }
+                        Err(e) => {
+                            // Also stash it for the error line below: a bare
+                            // toast is easy to miss, and the usual cause
+                            // (not running as administrator) needs spelling out.
+                            *app.g.mic_rename_error.lock() = Some(format!("{e:#}"));
+                            app.notify(format!("{e:#}"));
+                        }
+                    }
                 }
-                Err(e) => app.notify(format!("{e:#}")),
             }
-        }
-    });
+            ui.label(
+                RichText::new(
+                    "Renaming needs one run as administrator; the name sticks afterwards.",
+                )
+                .weak()
+                .small(),
+            );
+        });
+    }
     if let Some(applied) = &snap.applied_mic_name {
         ui.label(RichText::new(format!("Currently applied: {applied}")).weak());
+    }
+    if let Some(err) = &snap.mic_rename_error {
+        ui.label(
+            RichText::new(format!("Rename failed: {err}"))
+                .color(egui::Color32::from_rgb(220, 90, 90)),
+        );
     }
 
     section(ui, "Updates");
@@ -591,7 +622,14 @@ pub(super) fn diagnostics(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) 
     copy_row(ui, "LAN IP:", &app.g.lan_ip);
     copy_row(ui, "Port:", &app.g.port.to_string());
     copy_row(ui, "URL:", &app.g.url);
-    copy_row(ui, "Pairing PIN:", &snap.pin);
+    // The PIN is maskable on the Pair tab; honour the same toggle here so a
+    // screen share of Diagnostics doesn't leak it.
+    let pin_shown = if app.pin_visible {
+        snap.pin.clone()
+    } else {
+        "••••••".to_string()
+    };
+    copy_row(ui, "Pairing PIN:", &pin_shown);
     copy_row(ui, "Cert SHA-256:", &app.g.cert_hash);
     ui.add_space(4.0);
     ui.separator();
@@ -657,4 +695,119 @@ pub(super) fn diagnostics(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) 
         "Connection QR page:",
         &format!("https://{}:{}/qr", app.g.lan_ip, app.g.port),
     );
+}
+
+// ── Guide ─────────────────────────────────────────────────────────────────
+// The beginner 101: pairing, firewall, Discord setup, troubleshooting. This
+// is the in-app home for what used to live only in the README.
+
+pub(super) fn guide(_app: &mut GuiApp, ui: &mut egui::Ui, _snap: &Snapshot) {
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        section(ui, "Get talking in 3 steps");
+
+        ui.label(RichText::new("1. Install the virtual mic").strong());
+        ui.label(
+            "QuicMic plays your phone's audio into a virtual microphone on the PC, \
+             and Discord listens on its other end. On Windows that virtual mic is \
+             VB-Audio Virtual Cable (\"CABLE Input\" → \"CABLE Output\"). It is free:",
+        );
+        ui.horizontal(|ui| {
+            if ui.link("vb-audio.com/Cable").clicked() {
+                open_url("https://vb-audio.com/Cable/");
+            }
+            ui.label(RichText::new("(donationware — reboot if the installer asks, then restart QuicMic)").weak().small());
+        });
+        ui.label(
+            RichText::new("On macOS install BlackHole instead; on Linux create a PulseAudio null sink and point QuicMic at it with --device.")
+                .weak()
+                .small(),
+        );
+        ui.add_space(6.0);
+
+        ui.label(RichText::new("2. Pair your phone").strong());
+        ui.label(
+            "Open the Pair tab, scan the QR code with your phone's camera, and accept \
+             the certificate warning — it is your own PC, so the warning is expected. \
+             Then tap the mic button on the phone to start talking.",
+        );
+        ui.add_space(6.0);
+
+        ui.label(RichText::new("3. Pick the mic in Discord").strong());
+        ui.label(
+            "Discord → Settings → Voice & Video → Input Device → your phone's name. \
+             If you renamed the mic and Discord still shows the old name, restart \
+             Discord: it caches device names.",
+        );
+
+        ui.add_space(4.0);
+        ui.separator();
+        section(ui, "Windows Firewall");
+        ui.label(
+            "The first time QuicMic runs, Windows asks to allow it through the firewall: \
+             tick Private networks and allow. Your phone must be on the same Wi-Fi as the PC.",
+        );
+        ui.label(
+            RichText::new("Clicked Block by accident, or never saw the prompt?").strong(),
+        );
+        ui.label(
+            "Windows Settings → Privacy & security → Windows Security → Firewall & network \
+             protection → \"Allow an app through firewall\" → find QuicMic → check Private. \
+             Then restart QuicMic.",
+        );
+        ui.label(
+            RichText::new("The mic stream prefers UDP on the same port (default 8443). If UDP is blocked, \
+             the app falls back to TCP automatically — slightly more delay, but it still works.")
+                .weak()
+                .small(),
+        );
+
+        ui.add_space(4.0);
+        ui.separator();
+        section(ui, "Your phone's name in Discord");
+        ui.label(
+            "Auto mode (Settings tab) renames the mic input to your phone's name on every \
+             pairing, so Discord lists \"iPhone\" instead of \"CABLE Output\". Renaming needs \
+             one run as administrator — right-click the exe → Run as administrator — and the \
+             name sticks afterwards.",
+        );
+
+        ui.add_space(4.0);
+        ui.separator();
+        section(ui, "Troubleshooting");
+
+        ui.label(RichText::new("Paired but Discord hears nothing").strong());
+        ui.label(
+            "1) Status tab: does it say Connected, with rising packet counts?\n\
+             2) Devices tab: is the mic output \"CABLE Input\"?\n\
+             3) Discord → Voice & Video: is Input Device your phone's name (not Default)?\n\
+             4) Just renamed? Restart Discord — it caches device names.",
+        );
+        ui.add_space(6.0);
+
+        ui.label(RichText::new("Choppy or robotic audio").strong());
+        ui.label(
+            "Usually Wi-Fi congestion: move closer to the router or switch to 5 GHz. \
+             The Diagnostics tab shows the packet-loss percentage; sustained loss means \
+             the network, not the app.",
+        );
+        ui.add_space(6.0);
+
+        ui.label(RichText::new("Phone keeps asking to accept the certificate").strong());
+        ui.label(
+            "Normal: the certificate renews every 14 days and whenever your network \
+             changes. Accept it again and re-pair.",
+        );
+        ui.add_space(6.0);
+
+        ui.label(RichText::new("\"Another client is already connected\"").strong());
+        ui.label("One phone at a time. Close the mic page on the other device and try again.");
+        ui.add_space(6.0);
+
+        ui.label(RichText::new("The app won't start / closes instantly").strong());
+        ui.label(
+            "Most likely the virtual mic from step 1 is missing or disabled. Install it, \
+             make sure \"CABLE Input\" is enabled in Windows Sound settings, and try again. \
+             Run with --console from a terminal to see the full error.",
+        );
+    });
 }

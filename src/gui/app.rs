@@ -16,7 +16,7 @@ use eframe::egui;
 use super::panels;
 use super::{GuiCtx, Snapshot};
 
-/// The five GUI screens, mirroring the console's command groups.
+/// The GUI screens, mirroring the console's command groups.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Tab {
     Status,
@@ -24,6 +24,7 @@ pub(super) enum Tab {
     Devices,
     Settings,
     Diagnostics,
+    Guide,
 }
 
 impl Tab {
@@ -34,16 +35,18 @@ impl Tab {
             Tab::Devices => "Devices",
             Tab::Settings => "Settings",
             Tab::Diagnostics => "Diagnostics",
+            Tab::Guide => "Guide",
         }
     }
 
-    fn all() -> [Tab; 5] {
+    fn all() -> [Tab; 6] {
         [
             Tab::Status,
             Tab::Pair,
             Tab::Devices,
             Tab::Settings,
             Tab::Diagnostics,
+            Tab::Guide,
         ]
     }
 }
@@ -56,10 +59,8 @@ pub struct GuiApp {
     /// Cached QR texture and the PIN it was rendered for.
     pub(super) qr_texture: Option<egui::TextureHandle>,
     pub(super) qr_pin: String,
-    /// Rename-mic text field buffer.
+    /// Rename-mic text field buffer. Used by Fixed mode and by "Apply now".
     pub(super) rename_name: String,
-    /// Fixed-name buffer for the rename-mode selector below it.
-    pub(super) rename_fixed_name: String,
     /// Whether the pairing PIN digits are shown (vs masked).
     pub(super) pin_visible: bool,
     /// Update-check opt-out checkbox (persisted to gui_prefs.json).
@@ -77,8 +78,8 @@ impl GuiApp {
         devices_refresh: Arc<AtomicBool>,
     ) -> Self {
         let update_opt_out = super::load_prefs(&g.prefs_path).update_check_opt_out;
-        // Prefill the fixed-name field when the server started with one.
-        let rename_fixed_name = match &*g.mic_rename_mode.lock() {
+        // Prefill the name field when the server started with a fixed name.
+        let rename_name = match &*g.mic_rename_mode.lock() {
             crate::mic_name::MicRenameMode::Fixed(name) => name.clone(),
             _ => String::new(),
         };
@@ -89,8 +90,7 @@ impl GuiApp {
             tab: Tab::Status,
             qr_texture: None,
             qr_pin: String::new(),
-            rename_name: String::new(),
-            rename_fixed_name,
+            rename_name,
             pin_visible: true,
             update_opt_out,
             status_msg: None,
@@ -171,10 +171,11 @@ impl eframe::App for GuiApp {
                 ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 let (dot, text) = if snap.connected {
+                    // Identity slot: the phone's name, never its IP address
+                    // (the IP is shown in Diagnostics where it belongs).
                     let who = snap
                         .phone_name
                         .clone()
-                        .or(snap.mic_peer.clone())
                         .unwrap_or_else(|| "phone".to_string());
                     ("🟢", format!("Connected: {who}"))
                 } else {
@@ -239,6 +240,7 @@ impl eframe::App for GuiApp {
                 Tab::Devices => panels::devices(self, ui, &snap),
                 Tab::Settings => panels::settings(self, ui, &snap),
                 Tab::Diagnostics => panels::diagnostics(self, ui, &snap),
+                Tab::Guide => panels::guide(self, ui, &snap),
             }
             if let Some(msg) = self.take_status_msg() {
                 ui.add_space(8.0);
