@@ -267,11 +267,29 @@ pub fn is_recommended_device(name: &str) -> bool {
 
 /// Small GUI-owned preferences, persisted next to the server identity so they
 /// survive restarts. Only holds things the server itself has no place for.
-#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GuiPrefs {
     /// Skip the startup update check. Read by `main` before the check runs;
     /// the CLI flag and `QUICMIC_NO_UPDATE_CHECK` still take precedence.
     pub update_check_opt_out: bool,
+    /// WO Mic-style single-screen UI. When true the nav shows only Home and
+    /// the full tab set hides behind "Advanced". Defaults to true so a fresh
+    /// install opens on the simple screen.
+    #[serde(default = "default_true")]
+    pub simple_mode: bool,
+}
+
+impl Default for GuiPrefs {
+    fn default() -> Self {
+        Self {
+            update_check_opt_out: false,
+            simple_mode: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub fn prefs_path(data_dir: &Path) -> PathBuf {
@@ -435,7 +453,7 @@ fn window_icon() -> Option<eframe::egui::IconData> {
 
 #[cfg(test)]
 mod tests {
-    use super::{db_to_linear, is_recommended_device, linear_to_db, render_qr_gray};
+    use super::{db_to_linear, is_recommended_device, linear_to_db, render_qr_gray, GuiPrefs};
 
     #[test]
     fn qr_renders_square_bitmap_with_both_colors() {
@@ -466,6 +484,20 @@ mod tests {
         let linear = db_to_linear(-6.0);
         assert!((linear - 0.5011872).abs() < 1e-4);
         assert!((linear_to_db(linear) - -6.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn simple_mode_defaults_on_for_fresh_and_legacy_prefs() {
+        // Fresh install (no file / corrupt file): simple mode on.
+        assert!(GuiPrefs::default().simple_mode);
+        // Legacy prefs file without the field: serde default kicks in.
+        let legacy: GuiPrefs = serde_json::from_str(r#"{"update_check_opt_out":true}"#).unwrap();
+        assert!(legacy.update_check_opt_out);
+        assert!(legacy.simple_mode);
+        // Explicit opt-out round-trips.
+        let off: GuiPrefs =
+            serde_json::from_str(r#"{"update_check_opt_out":false,"simple_mode":false}"#).unwrap();
+        assert!(!off.simple_mode);
     }
 
     #[test]

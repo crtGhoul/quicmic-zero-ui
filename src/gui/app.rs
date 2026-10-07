@@ -16,9 +16,12 @@ use eframe::egui;
 use super::panels;
 use super::{GuiCtx, Snapshot};
 
-/// The GUI screens, mirroring the console's command groups.
+/// The GUI screens. Home is the WO Mic-style single screen (status + pair
+/// QR + hear-yourself); the rest mirror the console's command groups and
+/// hide behind "Advanced" while simple mode is on.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Tab {
+    Home,
     Status,
     Pair,
     Devices,
@@ -30,6 +33,7 @@ pub(super) enum Tab {
 impl Tab {
     fn label(self) -> &'static str {
         match self {
+            Tab::Home => "Home",
             Tab::Status => "Status",
             Tab::Pair => "Pair",
             Tab::Devices => "Devices",
@@ -39,8 +43,9 @@ impl Tab {
         }
     }
 
-    fn all() -> [Tab; 6] {
+    fn all() -> [Tab; 7] {
         [
+            Tab::Home,
             Tab::Status,
             Tab::Pair,
             Tab::Devices,
@@ -63,6 +68,9 @@ pub struct GuiApp {
     pub(super) rename_name: String,
     /// Whether the pairing PIN digits are shown (vs masked).
     pub(super) pin_visible: bool,
+    /// WO Mic-style single-screen UI. When true the nav shows only Home and
+    /// the full tab set hides behind "Advanced".
+    pub(super) simple_mode: bool,
     /// Update-check opt-out checkbox (persisted to gui_prefs.json).
     pub(super) update_opt_out: bool,
     /// Transient feedback line shown at the bottom of the active panel.
@@ -77,7 +85,9 @@ impl GuiApp {
         snap: Arc<parking_lot::Mutex<Snapshot>>,
         devices_refresh: Arc<AtomicBool>,
     ) -> Self {
-        let update_opt_out = super::load_prefs(&g.prefs_path).update_check_opt_out;
+        let prefs = super::load_prefs(&g.prefs_path);
+        let update_opt_out = prefs.update_check_opt_out;
+        let simple_mode = prefs.simple_mode;
         // Prefill the name field when the server started with a fixed name.
         let rename_name = match &*g.mic_rename_mode.lock() {
             crate::mic_name::MicRenameMode::Fixed(name) => name.clone(),
@@ -87,12 +97,13 @@ impl GuiApp {
             g,
             snap,
             devices_refresh,
-            tab: Tab::Status,
+            tab: Tab::Home,
             qr_texture: None,
             qr_pin: String::new(),
             rename_name,
             pin_visible: true,
             update_opt_out,
+            simple_mode,
             status_msg: None,
             snap_now: Snapshot::default(),
         }
@@ -106,6 +117,27 @@ impl GuiApp {
 
     pub(super) fn notify(&mut self, msg: impl Into<String>) {
         self.status_msg = Some((msg.into(), Instant::now()));
+    }
+
+    /// Flip simple mode and persist it. Turning it on lands on Home;
+    /// turning it off reveals the full tab set.
+    pub(super) fn set_simple_mode(&mut self, on: bool) {
+        self.simple_mode = on;
+        if on {
+            self.tab = Tab::Home;
+        }
+        let prefs = super::GuiPrefs {
+            update_check_opt_out: self.update_opt_out,
+            simple_mode: on,
+        };
+        match super::save_prefs(&self.g.prefs_path, &prefs) {
+            Ok(()) => self.notify(if on {
+                "Simple mode on — Home screen only."
+            } else {
+                "Advanced mode — all tabs visible."
+            }),
+            Err(e) => self.notify(format!("Could not save preference: {e:#}")),
+        }
     }
 
     fn take_status_msg(&mut self) -> Option<String> {
@@ -186,9 +218,13 @@ impl eframe::App for GuiApp {
                     ui.separator();
                     if ui
                         .link(format!("⬆ Update {tag} available"))
-                        .on_hover_text("Open the Settings tab to install")
+                        .on_hover_text("Open Settings to install")
                         .clicked()
                     {
+                        if self.simple_mode {
+                            // Settings hides behind Advanced in simple mode.
+                            self.set_simple_mode(false);
+                        }
                         self.tab = Tab::Settings;
                     }
                 }
@@ -202,24 +238,38 @@ impl eframe::App for GuiApp {
         });
 
         // ── Left nav ───────────────────────────────────────────────
+        // Simple mode: Home plus a single way out. Advanced mode: the full
+        // tab set (Home stays first — it's a fine landing either way).
         egui::Panel::left("nav")
             .resizable(false)
             .default_size(150.0)
             .show(ui, |ui| {
                 ui.add_space(8.0);
-                for tab in Tab::all() {
-                    let selected = self.tab == tab;
-                    if ui
-                        .selectable_label(selected, format!("  {}", tab.label()))
-                        .clicked()
-                    {
-                        self.tab = tab;
-                        if tab == Tab::Devices {
-                            // Fresh enumeration every time the tab opens.
-                            self.devices_refresh.store(true, Ordering::Relaxed);
-                        }
+                if self.simple_mode {
+                    let selected = self.tab == Tab::Home;
+                    if ui.selectable_label(selected, "  Home").clicked() {
+                        self.tab = Tab::Home;
                     }
                     ui.add_space(2.0);
+                    if ui.selectable_label(false, "  ⚙ Advanced").clicked() {
+                        self.set_simple_mode(false);
+                        self.tab = Tab::Status;
+                    }
+                } else {
+                    for tab in Tab::all() {
+                        let selected = self.tab == tab;
+                        if ui
+                            .selectable_label(selected, format!("  {}", tab.label()))
+                            .clicked()
+                        {
+                            self.tab = tab;
+                            if tab == Tab::Devices {
+                                // Fresh enumeration every time the tab opens.
+                                self.devices_refresh.store(true, Ordering::Relaxed);
+                            }
+                        }
+                        ui.add_space(2.0);
+                    }
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(8.0);
@@ -235,6 +285,7 @@ impl eframe::App for GuiApp {
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(6.0);
             match self.tab {
+                Tab::Home => panels::home(self, ui, &snap),
                 Tab::Status => panels::status(self, ui, &snap),
                 Tab::Pair => panels::pairing(self, ui, &snap),
                 Tab::Devices => panels::devices(self, ui, &snap),

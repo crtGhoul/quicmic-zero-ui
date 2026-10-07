@@ -63,6 +63,93 @@ fn status_dot(connected: bool) -> RichText {
     }
 }
 
+/// "Hear how I sound" button, shared by Home and Settings.
+fn hear_yourself_button(app: &mut GuiApp, ui: &mut egui::Ui) {
+    if ui.button("🎤 Hear how I sound").clicked() {
+        match spawn_hear_yourself(&app.g.stream) {
+            Ok(()) => {
+                app.g.stream.monitor_spawned.store(true, Ordering::SeqCst);
+                app.g.stream.monitor_enabled.store(true, Ordering::Relaxed);
+                app.notify("Hear-yourself on — headphones recommended to avoid feedback.");
+            }
+            Err(e) => app.notify(format!("Couldn't start hear-yourself: {e:#}")),
+        }
+    }
+}
+
+// ── Home (simple mode) ────────────────────────────────────────────────────
+// The WO Mic-style single screen: connection status, the pair QR/PIN, and
+// the hear-yourself check. Everything else hides behind "Advanced".
+
+pub(super) fn home(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
+    ui.vertical_centered(|ui| {
+        ui.add_space(10.0);
+        if snap.connected {
+            let who = snap
+                .phone_name
+                .clone()
+                .or(snap.mic_peer.clone())
+                .unwrap_or_else(|| "phone".to_string());
+            ui.heading(
+                RichText::new(format!("● Connected: {who}"))
+                    .size(26.0)
+                    .color(egui::Color32::from_rgb(80, 200, 120)),
+            );
+            ui.add_space(4.0);
+            ui.label("Your mic is live.");
+            if let Some(applied) = &snap.applied_mic_name {
+                ui.label(RichText::new(format!("Apps like Discord see: {applied}")).weak());
+            }
+            ui.add_space(8.0);
+            hear_yourself_button(app, ui);
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(format!(
+                    "{} received · {} lost ({:.1}%)",
+                    snap.packets_received,
+                    snap.packets_lost,
+                    snap.loss_percent()
+                ))
+                .weak()
+                .small(),
+            );
+        } else {
+            ui.heading(
+                RichText::new("○ Waiting for phone…")
+                    .size(26.0)
+                    .color(egui::Color32::GRAY),
+            );
+            ui.add_space(8.0);
+            if let Some(tex) = &app.qr_texture {
+                ui.image((tex.id(), egui::vec2(280.0, 280.0)));
+            } else {
+                ui.label("Could not render the QR code.");
+            }
+            ui.add_space(4.0);
+            ui.heading(RichText::new(&snap.pin).size(44.0).monospace());
+            ui.label(RichText::new("Pairing PIN").weak());
+            ui.add_space(8.0);
+            ui.label("1. Scan the QR with your phone camera.");
+            ui.label("2. Accept the certificate warning.");
+            ui.label("3. Tap the mic button — you're live.");
+        }
+    });
+    ui.add_space(10.0);
+    ui.separator();
+    ui.vertical_centered(|ui| {
+        ui.add_space(4.0);
+        if ui.button("⚙ Advanced").clicked() {
+            app.set_simple_mode(false);
+            app.tab = super::app::Tab::Status;
+        }
+        ui.label(
+            RichText::new("Status, Devices, Settings and Diagnostics live here.")
+                .weak()
+                .small(),
+        );
+    });
+}
+
 // ── Status ────────────────────────────────────────────────────────────────
 
 pub(super) fn status(_app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
@@ -308,6 +395,23 @@ pub(super) fn devices(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
 // ── Settings ──────────────────────────────────────────────────────────────
 
 pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
+    section(ui, "Interface");
+    let mut simple = app.simple_mode;
+    if ui
+        .checkbox(&mut simple, "Simple mode (Home screen only)")
+        .changed()
+    {
+        app.set_simple_mode(simple);
+    }
+    ui.label(
+        RichText::new(
+            "Simple mode shows just the Home screen — status, pair QR and hear-yourself. \
+             Turn it off for the full Status / Pair / Devices / Settings / Diagnostics tabs.",
+        )
+        .weak()
+        .small(),
+    );
+
     section(ui, "Audio");
     egui::Grid::new("settings-grid")
         .num_columns(3)
@@ -401,16 +505,7 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
             });
         }
     } else {
-        if ui.button("Hear how I sound").clicked() {
-            match spawn_hear_yourself(&app.g.stream) {
-                Ok(()) => {
-                    app.g.stream.monitor_spawned.store(true, Ordering::SeqCst);
-                    app.g.stream.monitor_enabled.store(true, Ordering::Relaxed);
-                    app.notify("Hear-yourself on — headphones recommended to avoid feedback.");
-                }
-                Err(e) => app.notify(format!("Couldn't start hear-yourself: {e:#}")),
-            }
-        }
+        hear_yourself_button(app, ui);
         ui.label(
             RichText::new(
                 "Plays your mic through this PC's speakers or headphones so you can hear how you sound. Use headphones — speakers can feed back into the mic.",
@@ -553,6 +648,7 @@ pub(super) fn settings(app: &mut GuiApp, ui: &mut egui::Ui, snap: &Snapshot) {
         app.update_opt_out = !update_check;
         let prefs = super::GuiPrefs {
             update_check_opt_out: app.update_opt_out,
+            simple_mode: app.simple_mode,
         };
         match super::save_prefs(&app.g.prefs_path, &prefs) {
             Ok(()) => app.notify("Saved — takes effect on next start."),

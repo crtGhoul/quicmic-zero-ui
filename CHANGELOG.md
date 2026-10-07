@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Simple-mode UI:** new Home tab (big connection status, pair QR + PIN, hear-yourself button, what apps see as the mic) — the WO Mic-style single screen. Simple mode is on by default: the nav collapses to Home + Advanced, with the full tab set one click away. Toggle in Settings > Interface, persisted in `gui_prefs.json`.
 - **In-app 101 guide:** new Guide tab in the PC app (pairing, Windows Firewall incl. missed-prompt recovery, picking the mic in Discord, troubleshooting) plus a matching Guide page on the phone (landing-page card → `guide.html`, cached offline by the service worker).
 - **Audio format fallback:** if the mic output device refuses its own default config (e.g. VB-Cable held in exclusive mode), the app now walks every supported config — preferring the rate closest to 48 kHz — before giving up, instead of dying on the first refusal.
 - **Actionable audio errors:** a missing virtual-mic device now names the remedy (install VB-Audio Virtual Cable from vb-audio.com/Cable, enable CABLE Input/Output) instead of dumping a bare device list; a total stream-open failure explains the exclusive-mode fix.
